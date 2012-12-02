@@ -68,11 +68,11 @@ tl_alloc(tl_mempool_t *pool, size_t size)
         assert(aligned_size >= size);
         assert(aligned_size <= pool->chunk_size);
 
-        bucket = pthread_getspecific(pool->key);
+        bucket = (pool_bucket_t*)pthread_getspecific(pool->key);
 
         if (bucket == NULL || bucket->offset + size > pool->chunk_size) {
                 tmp = bucket;
-                if ((bucket = malloc(sizeof(pool_bucket_t) + pool->chunk_size)) == NULL)
+                if ((bucket = (pool_bucket_t*)malloc(sizeof(pool_bucket_t) + pool->chunk_size)) == NULL)
                         return NULL;
                 
                 bucket->prev = tmp;

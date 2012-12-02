@@ -5,10 +5,10 @@
 /* for size_t */
 #include <stddef.h>
 #include <stdint.h>
-#include "alloc.h"
+#include "../utils/alloc.h"
 
 #ifdef CHECK_CRCS
-#include "crc.h"
+#include "../utils/crc.h"
 #endif
 
 typedef double (*kd_dist_func)(const double *a, const double *b);

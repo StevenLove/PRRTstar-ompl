@@ -1,4 +1,4 @@
-#include <config.h>
+#include "../utils/config.h"
 #include <stdlib.h>
 #include <assert.h>
 #include <string.h>
@@ -7,10 +7,10 @@
 #include <float.h>
 #include <math.h>
 #include <errno.h>
-#include "atomic.h"
+#include "../utils/atomic.h"
 #include "kdtree.h"
-#include "alloc.h"
-#include "crc.h"
+#include "../utils/alloc.h"
+#include "../utils/crc.h"
 
 #define USE_TL_MEMPOOL
 #define MEMPOOL_CHUNKSIZE 65000

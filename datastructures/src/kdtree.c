@@ -82,10 +82,10 @@ kd_create_tree(size_t dimensions, const double *min, const double *max
     assert(min != NULL);
     assert(max != NULL);
 
-    if ((tree = malloc(sizeof(kd_tree_t))) == NULL)
+    if ((tree = (kd_tree_t*)malloc(sizeof(kd_tree_t))) == NULL)
         return NULL;
 
-    if ((root = malloc(sizeof(kd_node_t))) == NULL) {
+    if ((root = (kd_node_t*)malloc(sizeof(kd_node_t))) == NULL) {
         free(tree);
         return NULL;
     }
@@ -133,7 +133,7 @@ kd_insert(kd_tree_t *tree, const double *config, void *value)
     memcpy(max, tree->max, sizeof(double) * dimensions);
 
 #ifdef USE_TL_MEMPOOL
-    if ((new_node = tl_alloc(&tree->mempool, sizeof(kd_node_t))) == NULL)
+    if ((new_node = (kd_node_t*)tl_alloc(&tree->mempool, sizeof(kd_node_t))) == NULL)
         err(1, "failed to allocate new node");
 #else
     if ((new_node = malloc(sizeof(kd_node_t))) == NULL)

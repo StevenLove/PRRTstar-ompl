@@ -23,7 +23,7 @@ crc32_finish(crc32_t crc) {
 
 static inline void
 crc32_accum(crc32_t *accum, const void *buf, size_t len) {
-        const uint8_t *ptr = buf;
+        const uint8_t *ptr = (const uint8_t *)buf;
         unsigned i;
 
         for (i=0 ; i<len ; ++i) {

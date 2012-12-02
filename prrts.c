@@ -264,7 +264,7 @@ local_heap_create(size_t align)
 
         heap->prev = NULL;
         heap->offset = aligned_offset(heap->data, align);
-        assert(heap->offset < align);
+        assert(heap->offset < (int)align);
 
         return heap;
 }
@@ -301,7 +301,7 @@ local_alloc(local_heap_t **local_heap, size_t size, size_t align)
                 *local_heap = fh;
 
                 old_offset = aligned_offset(fh->data, align);
-                assert(old_offset < align);
+                assert(old_offset < (int)align);
                 new_offset = old_offset + aligned_size;
         }
 
@@ -435,11 +435,11 @@ worker_near_callback(void *worker_arg, int no, void *near_node, double dist)
         worker_t *worker = (worker_t*)worker_arg;
         prrts_link_t *near_link;
 
-        assert(no == worker->near_list_size);
-        assert(no <= worker->near_list_capacity);
+        assert(no == (int)worker->near_list_size);
+        assert(no <= (int)worker->near_list_capacity);
 
         /* check if we need to grow the array */
-        if (no == worker->near_list_capacity) {
+        if (no == (int)worker->near_list_capacity) {
                 /*
                  * we're not using "local_alloc" here since this
                  * reallocation is relatively infrequent, and it
@@ -814,7 +814,7 @@ worker_step(worker_t *worker, int step_no)
         prrts_system_t *system = worker->system;
         double radius;
         double nearest_dist, dist;
-        int near_list_size;
+        unsigned near_list_size;
         prrts_node_t *nearest;
         prrts_node_t *new_node;
         prrts_link_t *link;
@@ -1069,7 +1069,7 @@ worker_main(void *arg)
 #endif
                                
 
-                        if (step_no >= runtime->sample_limit) {
+                        if (step_no >= (int)runtime->sample_limit) {
                                 /* __sync_set(&runtime->done, true); */
                                 __sync_bool_compare_and_swap(&runtime->done, false, true);
                         }

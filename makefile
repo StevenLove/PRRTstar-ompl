@@ -1,12 +1,16 @@
 KDTREE_ROOT= datastructures
 KDTREE_SRC = $(KDTREE_ROOT)/src
+INCLUDE_DIR= /usr/local/include
+LIB_DIR    = /usr/local/lib  
 OBJS   = alloc.o kdtree.o PRRTstar.o RigidBodyPlanning.o
+LIBS   = -lpthread -lompl 
 CC     = g++
 CFLAGS = -c -Wall -Wextra
-LDFLAGS= -I/usr/local/include:. -L/usr/local/lib  -lpthread -lompl 
+LDFLAGS=  
+
 
 plannerApp: $(OBJS)
-	$(CC) $(OBJS) -o $@ $(LDFLAGS)
+	$(CC) $(LDFLAGS) $(OBJS) -o $@ -I$(INCLUDE_DIR):. -L$(LIB_DIR) $(LIBS)
 
 alloc.o   :
 	$(CC) $(CFLAGS) $(KDTREE_SRC)/alloc.c -o $@ -I$(KDTREE_ROOT)

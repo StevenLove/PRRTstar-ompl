@@ -2,7 +2,7 @@
 #define PRRTS_H
 
 #include <stdbool.h>
-#include "kdtree.h"
+#include "datastructures/kdtree.h"
 
 #define REGION_SPLIT_AXIS 0
 #define INITIAL_NEAR_LIST_CAPACITY 1024

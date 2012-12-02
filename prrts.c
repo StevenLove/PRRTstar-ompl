@@ -1,4 +1,4 @@
-#include <config.h>
+#include "utils/config.h"
 
 #define SET_CPU_AFFINITY
 
@@ -26,14 +26,14 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stddef.h>
-#include "kdtree.h"
-#include "alloc.h"
-#include "mt19937a.h"
-#include "hrtimer.h"
-#include "stats.h"
-#include "atomic.h"
+#include "datastructures/kdtree.h"
+#include "utils/alloc.h"
+#include "utils/mt19937a.h"
+#include "utils/hrtimer.h"
+#include "utils/stats.h"
+#include "utils/atomic.h"
 #include "prrts.h"
-#include "crc.h"
+#include "utils/crc.h"
 
 #define LOCAL_HEAP_SIZE 256000
 
@@ -259,7 +259,7 @@ local_heap_create(size_t align)
 {
         local_heap_t *heap;
 
-        if ((heap = malloc(sizeof(local_heap_t))) == NULL)
+        if ((heap = (local_heap_t *)malloc(sizeof(local_heap_t))) == NULL)
                 err(1, "failed to allocate local_heap");
 
         heap->prev = NULL;
@@ -293,7 +293,7 @@ local_alloc(local_heap_t **local_heap, size_t size, size_t align)
         assert(size < LOCAL_HEAP_SIZE);
 
         if (new_offset >= LOCAL_HEAP_SIZE) {
-                if ((fh = malloc(sizeof(local_heap_t))) == NULL)
+                if ((fh = (local_heap_t *)malloc(sizeof(local_heap_t))) == NULL)
                         err(1, "failed to allocate local_heap block");
 
                 /* printf("%d: new heap\n", worker->thread_no); */
@@ -445,7 +445,7 @@ worker_near_callback(void *worker_arg, int no, void *near_node, double dist)
                  * reallocation is relatively infrequent, and it
                  * allows us to make use of realloc.
                  */
-                if ((worker->near_list = realloc(worker->near_list, sizeof(near_list_t) * 2 * no)) == NULL)
+                if ((worker->near_list = (near_list_t*)realloc(worker->near_list, sizeof(near_list_t) * 2 * no)) == NULL)
                         err(1, "failed to reallocate cost nodes (requested %lu bytes)", (unsigned long)(sizeof(near_list_t) * 2 * no));
                 
 		worker->near_list_capacity = 2 * no;
@@ -519,7 +519,7 @@ create_node(worker_t *worker, double *config, size_t dimensions, bool in_goal, d
         prrts_node_t *new_node;
         prrts_link_t *link;
 
-        if ((new_node = local_alloc(&worker->node_heap, sizeof(prrts_node_t), CACHE_LINE_SIZE/2)) == NULL)
+        if ((new_node = (prrts_node_t *)local_alloc(&worker->node_heap, sizeof(prrts_node_t), CACHE_LINE_SIZE/2)) == NULL)
                 err(1, "failed to create node");
         
         /* memcpy(new_node->config, config, sizeof(double) * dimensions); */
@@ -984,8 +984,8 @@ create_worker_system_data(worker_t *worker)
                 worker->sample_min = system->min;
                 worker->sample_max = system->max;
         } else {
-                sample_min = array_copy(system->min, system->dimensions);
-                sample_max = array_copy(system->max, system->dimensions);
+                sample_min = (double*)array_copy(system->min, system->dimensions);
+                sample_max = (double*)array_copy(system->max, system->dimensions);
 
                 min = system->min[REGION_SPLIT_AXIS];
                 t = (system->max[REGION_SPLIT_AXIS] - min) / thread_count;
@@ -1012,7 +1012,7 @@ worker_main(void *arg)
         size_t dimensions = system->dimensions;
         int step_no;
 
-        worker->near_list = malloc(sizeof(near_list_t) * INITIAL_NEAR_LIST_CAPACITY);
+        worker->near_list = (near_list_t*)malloc(sizeof(near_list_t) * INITIAL_NEAR_LIST_CAPACITY);
         worker->near_list_size = 0;
         worker->near_list_capacity = INITIAL_NEAR_LIST_CAPACITY;
 
@@ -1032,7 +1032,7 @@ worker_main(void *arg)
         time_stats_clear(&worker->update_time);
         count_stats_clear(&worker->near_list_size_stats);
 
-        worker->new_config = local_alloc(&worker->config_heap, sizeof(double) * dimensions, CACHE_LINE_SIZE/2);
+        worker->new_config = (double*)local_alloc(&worker->config_heap, sizeof(double) * dimensions, CACHE_LINE_SIZE/2);
 
         step_no = runtime->step_no;
 
@@ -1043,7 +1043,7 @@ worker_main(void *arg)
                 if (worker_step(worker, step_no)) {
                         worker->clear_count++;
 
-                        worker->new_config = local_alloc(&worker->config_heap, sizeof(double) * dimensions, CACHE_LINE_SIZE/2);
+                        worker->new_config = (double*)local_alloc(&worker->config_heap, sizeof(double) * dimensions, CACHE_LINE_SIZE/2);
 
                         /*
                          * Successfullly added a configuration, update
@@ -1124,23 +1124,23 @@ path_to_solution(prrts_system_t *system, prrts_link_t *path)
         if (system->target != NULL)
                 n++;
 
-        if ((s = malloc(sizeof(prrts_solution_t) + sizeof(double *) * n + sizeof(double) * dimensions * n)) == NULL)
+        if ((s = (prrts_solution_t*)malloc(sizeof(prrts_solution_t) + sizeof(double *) * n + sizeof(double) * dimensions * n)) == NULL)
                 err(1, "failed to create solution");
 
         s->path_cost = path->path_cost;
         s->path_length = n;
         
-        config_ptr = (void*)(&s->configs[n]);
+        config_ptr = (double*)(&s->configs[n]);
 
         i = n;
 
         if (system->target != NULL) {
-                s->configs[--i] = memcpy(config_ptr, system->target, sizeof(double) * dimensions);
+                s->configs[--i] = (const double*)memcpy(config_ptr, system->target, sizeof(double) * dimensions);
                 config_ptr += dimensions;
         }
 
         for ( ptr = path ; ptr != NULL ; ptr = ptr->parent) {
-                s->configs[--i] = memcpy(config_ptr, ptr->node->config, sizeof(double) * dimensions);
+                s->configs[--i] = (const double*)memcpy(config_ptr, ptr->node->config, sizeof(double) * dimensions);
                 config_ptr += dimensions;
         }
 
@@ -1394,7 +1394,7 @@ prrts_run(prrts_system_t *system, prrts_options_t *options, int thread_count, lo
         if (duration > 0)
                 runtime->time_limit = runtime->start_time + duration;
 
-        if ((workers = malloc(sizeof(worker_t) * thread_count)) == NULL)
+        if ((workers = (worker_t*)malloc(sizeof(worker_t) * thread_count)) == NULL)
                 err(1, "failed to create workers array");
 
         /*

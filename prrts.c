@@ -622,7 +622,8 @@ update_best_path(worker_t *worker, prrts_link_t *link, double radius)
         link_dist_to_goal = link->path_cost;
     } else if (system->target != NULL) {
         /* goal-biased search */
-        dist_to_target = (system->dist_func)(node->config, system->target);
+        dist_to_target = (system->dist_func)(worker->system_data
+                                           , node->config, system->target);
         if (dist_to_target > radius ||
             !can_link(worker, node->config, system->target, dist_to_target))
             return;
@@ -643,7 +644,7 @@ update_best_path(worker_t *worker, prrts_link_t *link, double radius)
                  * itself, it must have a link to a
                  * target goal configuration
                  */
-                best_dist += (system->dist_func)(
+                best_dist += (system->dist_func)(worker->system_data,
                     best_path->node->config, system->target);
 
                 /* TODO: the dist_func is called for
@@ -881,7 +882,8 @@ worker_step(worker_t *worker, int step_no)
         if (!(system->clear_func)(worker->system_data, new_config))
             return false;
 
-        dist = (system->dist_func)(new_config, nearest->config);
+        dist = (system->dist_func)(worker->system_data, new_config
+                                 , nearest->config);
 
         assert(dist <= nearest_dist);
 
@@ -1402,7 +1404,7 @@ prrts_run(prrts_system_t *system, prrts_options_t *options, int thread_count, lo
     
     runtime->kd_tree = kd_create_tree(
         system->dimensions, system->min, system->max, system->dist_func,
-        root_node->config, root_node);
+        root_node->config, root_node, system->space_config);
 
     printf("Starting up (" 
 #ifdef _OPENMP

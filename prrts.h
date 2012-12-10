@@ -9,8 +9,11 @@
 
 typedef bool (*prrts_in_goal_func)(void *system, const double *config);
 typedef bool (*prrts_clear_func)(void *system, const double *config);
-typedef bool (*prrts_link_func)(void *system, const double *a, const double *b);
-typedef void *(*prrts_system_data_alloc_func)(int thread_no, const double *sample_min, const double *sample_max);
+typedef bool (*prrts_link_func)(void *system, const double *a
+                                            , const double *b);
+typedef void *(*prrts_system_data_alloc_func)(int thread_no
+                                            , const double *sample_min
+                                            , const double *sample_max);
 typedef void (*prrts_system_data_free_func)(void *system);
 
 typedef struct prrts_system {
@@ -46,8 +49,14 @@ typedef struct prrts_solution {
         const double *configs[0];
 } prrts_solution_t;
 
-prrts_solution_t* prrts_run_for_duration(prrts_system_t *system, prrts_options_t *options, int thread_count, long duration);
-prrts_solution_t* prrts_run_for_samples(prrts_system_t *system, prrts_options_t *options, int thread_count, size_t sample_count);
-prrts_solution_t* prrts_run_indefinitely(prrts_system_t *system, prrts_options_t *options, int thread_count);
+prrts_solution_t* prrts_run_for_duration(prrts_system_t *system
+                                       , prrts_options_t *options
+                                       , int thread_count, long duration);
+prrts_solution_t* prrts_run_for_samples(prrts_system_t *system
+                                      , prrts_options_t *options
+                                      , int thread_count, size_t sample_count);
+prrts_solution_t* prrts_run_indefinitely(prrts_system_t *system
+                                       , prrts_options_t *options
+                                       , int thread_count);
 
 #endif /* PRRTS_H */

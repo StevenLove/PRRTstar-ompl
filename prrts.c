@@ -1024,9 +1024,19 @@ create_worker_system_data(worker_t *worker)
         worker->sample_min = sample_min;
         worker->sample_max = sample_max;
     }
-
-    worker->system_data = (system->system_data_alloc_func)(
+    
+    /** Diptorup Deb : 12/08/2012 -
+      * Instead of getting the pointer to the space configuration object
+      * directly assign the prrts_system_t.space_config
+      */
+   
+    /*
+        worker->system_data = (system->system_data_alloc_func)(
         thread_no, worker->sample_min, worker->sample_max);
+    */
+        worker->system_data = system->space_config;
+   
+    
 }
 
 static void *
@@ -1513,4 +1523,7 @@ prrts_run_indefinitely(prrts_system_t *system, prrts_options_t *options, int thr
 {
     return prrts_run(system, options, thread_count, 0, UINT_MAX);
 }
+
+
+            
 

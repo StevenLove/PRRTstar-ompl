@@ -28,6 +28,10 @@ typedef struct prrts_system {
         prrts_in_goal_func in_goal_func;
         prrts_clear_func clear_func;
         prrts_link_func link_func;
+        
+        /* Diptorup Deb :Adding a void pointer to store the PRRTstar object */
+        void* space_config;
+        
 } prrts_system_t;
 
 typedef struct prrts_options {

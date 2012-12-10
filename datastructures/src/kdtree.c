@@ -73,7 +73,8 @@ set_crc32_node(kd_node_t *node, size_t dimensions)
 
 kd_tree_t *
 kd_create_tree(size_t dimensions, const double *min, const double *max
-         , kd_dist_func dist_func, const double *init, void *value)
+         , kd_dist_func dist_func, const double *init, void *value
+         , void* space_config)
 {
     kd_tree_t *tree;
     kd_node_t *root;
@@ -95,6 +96,7 @@ kd_create_tree(size_t dimensions, const double *min, const double *max
     tree->max = max;
     tree->dist_func = dist_func;
     tree->root = root;
+    tree->space_config = space_config;
 
 #ifdef USE_TL_MEMPOOL
     if ((error = tl_mempool_init(&tree->mempool, MEMPOOL_CHUNKSIZE)) != 0){
@@ -214,7 +216,7 @@ kd_nearest_impl(kd_nearest_t *t, kd_node_t *n, size_t axis)
     kd_node_t *a;
     kd_node_t *b;
 
-    d = (t->tree->dist_func)(n->config, t->target);
+    d = (t->tree->dist_func)(t->tree->space_config, n->config, t->target);
 
     if (d < t->dist) {
         check_crc32_node(n, t->tree->dimensions);
@@ -319,7 +321,7 @@ kd_near_impl(kd_near_t *t, kd_node_t *n, size_t axis)
     kd_node_t *a;
     kd_node_t *b;
 
-    d = (t->tree->dist_func)(n->config, t->target);
+    d = (t->tree->dist_func)(t->tree->space_config, n->config, t->target);
 
     if (d < t->radius) {
         check_crc32_node(n, t->tree->dimensions);

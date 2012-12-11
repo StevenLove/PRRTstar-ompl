@@ -49,13 +49,13 @@ typedef struct prrts_solution {
         const double *configs[0];
 } prrts_solution_t;
 
-prrts_solution_t* prrts_run_for_duration(prrts_system_t *system
+extern "C" prrts_solution_t* prrts_run_for_duration(prrts_system_t *system
                                        , prrts_options_t *options
                                        , int thread_count, long duration);
-prrts_solution_t* prrts_run_for_samples(prrts_system_t *system
+extern "C" prrts_solution_t* prrts_run_for_samples(prrts_system_t *system
                                       , prrts_options_t *options
                                       , int thread_count, size_t sample_count);
-prrts_solution_t* prrts_run_indefinitely(prrts_system_t *system
+extern "C" prrts_solution_t* prrts_run_indefinitely(prrts_system_t *system
                                        , prrts_options_t *options
                                        , int thread_count);
 

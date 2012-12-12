@@ -60,9 +60,9 @@ ompl::geometric::PRRTstar::PRRTstar(const base::SpaceInformationPtr &si)
     specs_.optimizingPaths = true;
     
     /* Get the StateSpacePtr from the SpaceInformationPtr. This is needed
-     * to check the space type and also convert the double [] used to 
-     * represent a state in the current prrts implementation and convert it 
-     * to a ompl::base::State
+     * to check the space type and also convert the double[], used to 
+     * represent a state in the current prrts implementation 
+     * to an ompl::base::State
      */
     
     stateSpace_            = si_->getStateSpace();
@@ -107,10 +107,6 @@ void ompl::geometric::PRRTstar::clear(void)
     Planner::clear();
     sampler_.reset();
     freeMemory();
-    /*
-    if (nn_)
-        nn_->clear();
-    */
 }
 
 ompl::base::PlannerStatus ompl::geometric::PRRTstar::solve(

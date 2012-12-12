@@ -51,12 +51,7 @@ extern "C"{
 #include <limits>
 #include <map>
 #include <assert.h>
-
-
-struct ompl::geometric::PRRTstar_wrapper {
-    ompl::geometric::PRRTstar * prrtstar_obj;
-         
-};
+#include <vector>
 
 ompl::geometric::PRRTstar::PRRTstar(const base::SpaceInformationPtr &si) 
     : base::Planner(si, "PRRTstar")
@@ -122,6 +117,9 @@ ompl::base::PlannerStatus ompl::geometric::PRRTstar::solve(
                                  const base::PlannerTerminationCondition &ptc)
 {
     std::cout << "Executing solve...." << std::endl;
+    //double test1[3] = {.5,.25,.75};
+    //double test2[3] = {.5,.25,.75};
+    //distanceFunction(test1,test2);
     checkValidity();
     assert(setup_ == true);
     assert(prrtsSystem_ != NULL);
@@ -244,15 +242,13 @@ bool ompl::geometric::PRRTstar::setupPrrtsSystem()
         std::cout <<  max_config[i] << " ";
     std::cout << std::endl;   
     //LOG : end     
-    ompl::geometric::PRRTstar_wrapper * w 
-                                       = new ompl::geometric::PRRTstar_wrapper;
-    w->prrtstar_obj = this;
+
     prrtsSystem_->dimensions   = dimensions_;
     prrtsSystem_->init         = init_config;
     prrtsSystem_->min          = min_config;
     prrtsSystem_->max          = max_config;
     prrtsSystem_->target       = target_config;
-    prrtsSystem_->space_config = w;
+    prrtsSystem_->space_config = this;
     
     /* system_data_alloc_func is not being used in our implementation
      * instead have introduces a new void* data member in the prrts_system_t
@@ -281,73 +277,84 @@ void ompl::geometric::PRRTstar::setupPrrtsOptions ()
 
 bool ompl::geometric::PRRTstar::isValid(const double *config)
 {
-    ompl::base::RealVectorStateSpace state;
     std::vector<double> real;    
-    for (int i = 0; i < this->dimensions_; i++){
+    for (int i = 0; i < dimensions_; i++){
         real.push_back(config[i]);
     }
-    this->stateSpace_->copyFromReals((ompl::base::State*)(&state), real);
-    bool valid =  si_->isValid((ompl::base::State*)&state);
-    return valid;
+    ompl::base::State *state = stateSpace_->allocState();
+    stateSpace_->copyFromReals(state, real);
+    
+    stateSpace_->copyFromReals(state, real);
+    
+    bool clear =  si_->isValid(state);
+    
+    stateSpace_->freeState(state);    
+    
+    return clear;
 }
 
 bool ompl::geometric::PRRTstar::checkMotion (const double *config1
                                            , const double *config2)
 {
-    ompl::base::RealVectorStateSpace state1, state2;
     std::vector<double> real1, real2;    
-    for (int i = 0; i < this->dimensions_; i++){
+    for (int i = 0; i < dimensions_; i++){
         real1.push_back(config1[i]);
         real2.push_back(config2[i]);
     }
+    ompl::base::State *state1 = stateSpace_->allocState();
+    ompl::base::State *state2 = stateSpace_->allocState();
     
-    this->stateSpace_->copyFromReals((ompl::base::State*)(&state1), real1);
-    this->stateSpace_->copyFromReals((ompl::base::State*)(&state2), real2);
+    stateSpace_->copyFromReals(state1, real1);
+    stateSpace_->copyFromReals(state2, real2);
     
-    bool valid =  si_->checkMotion((ompl::base::State*)&state1
-                                 , (ompl::base::State*)&state2);
-    return valid;
-
+    bool validMotion =  si_->checkMotion(state1, state2);
+    
+    stateSpace_->freeState(state1);
+    stateSpace_->freeState(state2);
+    
+    return validMotion;
 }
 
 bool ompl::geometric::PRRTstar::isSatisfied (const double *config)
 {
-    ompl::base::RealVectorStateSpace state;
     std::vector<double> real;    
-    for (int i = 0; i < this->dimensions_; i++){
+    for (int i = 0; i < dimensions_; i++){
         real.push_back(config[i]);
     }
-    this->stateSpace_->copyFromReals((ompl::base::State*)(&state), real);
+    ompl::base::State *state = stateSpace_->allocState();
+    stateSpace_->copyFromReals(state, real);
+        
+    bool inGoal = pdef_->getGoal()->isSatisfied(state); 
+       
+    stateSpace_->freeState(state);
     
-    bool valid = pdef_->getGoal()->isSatisfied((ompl::base::State*)&state);
-    return valid;
+    return inGoal;
 }
 
 double ompl::geometric::PRRTstar::distanceFunction(const double *config1
                                                  , const double *config2) 
 {
-    std::cout << "Log2" << std::endl;
-    ompl::base::State *state1 = stateSpace_->allocState();
-    ompl::base::State *state2 = stateSpace_->allocState();
-    
-    std::vector<double>  real1, real2;    
-    for (int i = 0; i < this->dimensions_; i++){
+    std::vector<double>  real1, real2; 
+    for (int i = 0; i < dimensions_; i++){
         real1.push_back(config1[i]);
         real2.push_back(config2[i]);
     }
-    std::cout << "Log3" << std::endl;
-    for( std::vector<double>::const_iterator i = real1.begin(); i != real1.end(); ++i)
-        std::cout << *i << ' ';
-    //this->stateSpace_->copyFromReals((ompl::base::State*)(&state1), real1);
-    //this->stateSpace_->copyFromReals((ompl::base::State*)(&state2), real2);
+
+    ompl::base::State *state1 = stateSpace_->allocState();
+    ompl::base::State *state2 = stateSpace_->allocState();
+    
+    stateSpace_->copyFromReals(state1, real1);
+    stateSpace_->copyFromReals(state2, real2);
+  
     //si_->printState(state1);
-    //si_->printState((ompl::base::State*)state2);
-    //exit(1);
-    //return  si_->distance((ompl::base::State*)&state1
-    //                             , (ompl::base::State*)&state2);
-    //si_->freeState(state1);
-    //si_->freeState(state2);
-    return 0;
+    //si_->printState(state2);
+    
+    double distance =   si_->distance(state1, state2);
+    //std::cout<<"Distance : " << distance <<std::endl;
+    stateSpace_->freeState(state1);
+    stateSpace_->freeState(state2);
+    
+    return distance;
 }     
 
 /* end of private helper functions */
@@ -358,44 +365,28 @@ double ompl::geometric::PRRTstar::distanceFunction(const double *config1
 bool ompl::geometric::PRRTstar::prrts_clear_func(void * usrPtr
                                                , const double *config)
 {
-    //return static_cast<PRRTstar*>(usrPtr)->isValid(config);
-    return true;
+    return static_cast<PRRTstar*>(usrPtr)->isValid(config);
 }
 
 bool ompl::geometric::PRRTstar::prrts_link_func (void * usrPtr
                                                , const double *config1
                                                , const double *config2)
 {
-    //return static_cast<PRRTstar*>(usrPtr)->checkMotion(config1, config2);
-    return true;
-
+    return static_cast<PRRTstar*>(usrPtr)->checkMotion(config1, config2);
 }    
 
 bool ompl::geometric::PRRTstar::prrts_in_goal (void * usrPtr
                                              , const double *config)
 {
-    //return static_cast<PRRTstar*>(usrPtr)->isSatisfied(config);
-    return true;
+    return static_cast<PRRTstar*>(usrPtr)->isSatisfied(config);
 }
 
 double ompl::geometric::PRRTstar::prrts_dist_func(void * usrPtr
                                                 , const double *config1
                                                 , const double *config2) 
 {
-    std::cout << "Log1" << std::endl;
     return static_cast<PRRTstar*>(usrPtr)->distanceFunction(config1,config2);
-
-
 }     
-
-ompl::geometric::PRRTstar_wrapper * ompl::geometric::PRRTstar::wrapObjToStruct()
-{
-    ompl::geometric::PRRTstar_wrapper * w = new ompl::geometric::PRRTstar_wrapper;
-    w->prrtstar_obj = this;
-    return w;
-
-}                                       
-
                                                                                                                         
 
 

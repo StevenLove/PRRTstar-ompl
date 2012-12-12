@@ -52,8 +52,7 @@ namespace ompl
 
     namespace geometric
     {
-        struct PRRTstar_wrapper;
-        
+
         /**
           @anchor gPRRTstar
           @par Short description
@@ -96,7 +95,7 @@ namespace ompl
 
             virtual void clear(void);
 
-            /** \brief When the planner attempts to rewire the tree,
+            /** \brief When the planner attempts to rewire the tree,git shor
              *  it does so by looking at some of the neighbors within
              *  a computed radius. The computation of that radius
              *  depends on the multiplicative factor set here.
@@ -280,8 +279,6 @@ namespace ompl
             double distanceFunction(const double *config1
                                   , const double *config2);   
                                   
-            PRRTstar_wrapper * wrapObjToStruct();                                
-                                                                                                                        
          };
          
     }

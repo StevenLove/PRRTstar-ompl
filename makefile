@@ -7,7 +7,7 @@ LIB_DIR     = /usr/local/lib
 OBJS        = alloc.o kdtree.o mt19937a.o hrtimer.o prrts.o stats.o PRRTstar.o RigidBodyPlanning.o 
 LIBS        = -lpthread -lrt -lompl 
 CC          = g++
-CFLAGS      = -c -Wall -Wextra
+CFLAGS      = -c -Wall -Wextra -ansi -pedantic -g 
 LDFLAGS     =  
 
 plannerApp: $(OBJS)

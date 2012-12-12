@@ -116,10 +116,6 @@ void ompl::geometric::PRRTstar::clear(void)
 ompl::base::PlannerStatus ompl::geometric::PRRTstar::solve(
                                  const base::PlannerTerminationCondition &ptc)
 {
-    std::cout << "Executing solve...." << std::endl;
-    //double test1[3] = {.5,.25,.75};
-    //double test2[3] = {.5,.25,.75};
-    //distanceFunction(test1,test2);
     checkValidity();
     assert(setup_ == true);
     assert(prrtsSystem_ != NULL);

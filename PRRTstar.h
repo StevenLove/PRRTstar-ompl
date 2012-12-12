@@ -45,39 +45,42 @@
 #include <vector>
 
 extern "C"{
-#include "datastructures/kdtree.h"
 #include "prrts.h"
-
 }
-
-
 namespace ompl
 {
 
     namespace geometric
     {
-
+        struct PRRTstar_wrapper;
+        
         /**
-           @anchor gPRRTstar
-           @par Short description
-           \ref gPRRTstar "RRT*" (optimal RRT) is an asymptotically-optimal incremental
-           sampling-based motion planning algorithm. \ref gPRRTstar "RRT*" algorithm is
-           guaranteed to converge to an optimal solution, while its
-           running time is guaranteed to be a constant factor of the
-           running time of the \ref gRRT "RRT". The notion of optimality is with
-           respect to the distance function defined on the state space
-           we are operating on. See ompl::base::Goal::setMaximumPathLength() for
-           how to set the maximally allowed path length to reach the goal.
-           If a solution path that is shorter than ompl::base::Goal::getMaximumPathLength() is
-           found, the algorithm terminates before the elapsed time.
-           @par External documentation
-           S. Karaman and E. Frazzoli, Sampling-based
-           Algorithms for Optimal Motion Planning, International Journal of Robotics
-           Research (to appear), 2011.
-           <a href="http://arxiv.org/abs/1105.1186">http://arxiv.org/abs/1105.1186</a>
-        */
-
-        /** \brief Optimal Rapidly-exploring Random Trees */
+          @anchor gPRRTstar
+          @par Short description
+          \ref gPRRTstar "PRRT*" (parallel RRT*) is a parallel implementation 
+          Of the asymptotically-optimal incremental sampling-based RRT*
+          algorithm. 
+          \ref gPRRTstar "PRRT*" algorithm is able to achieve super-liner
+          speed ups on multi-core architectures, using three key features:
+          <ol>
+          <li> lock-free parallelism using atomic operations to
+               eliminate slowdowns caused by lock overhead and contention,</li>
+          <li> partition-based sampling to reduce the size of each processor
+               core’s working data set to improve cache efficiency, and ,</li>
+          <li> parallel backtracking to reduce the number of rewiring steps
+               performed in PRRT*. </li>
+          <ol>
+          <p>
+          @par External documentation
+          Jeffrey Ichnowski and Ron Alterovitz
+          Parallel Sampling-Based Motion Planning with Superlinear Speedup
+          (IROS), 2012.
+           <a href="http://robotics.cs.unc.edu/publications/Ichnowski2012_IROS.pdf">
+              http://robotics.cs.unc.edu/publications/Ichnowski2012_IROS.pdf
+           </a>
+         */
+        
+        /** \brief Parallel and Optimal Rapidly-exploring Random Trees */
         class PRRTstar : public base::Planner
         {
         public:
@@ -88,204 +91,199 @@ namespace ompl
 
             virtual void getPlannerData(base::PlannerData &data) const;
 
-            virtual base::PlannerStatus solve(const base::PlannerTerminationCondition &ptc);
+            virtual base::PlannerStatus solve(
+                                 const base::PlannerTerminationCondition &ptc);
 
             virtual void clear(void);
 
-            /** \brief Set the goal bias
-
-                In the process of randomly selecting states in
-                the state space to attempt to go towards, the
-                algorithm may in fact choose the actual goal state, if
-                it knows it, with some probability. This probability
-                is a real number between 0.0 and 1.0; its value should
-                usually be around 0.05 and should not be too large. It
-                is probably a good idea to use the default value. */
-            void setGoalBias(double goalBias)
-            {
-                goalBias_ = goalBias;
-            }
-
-            /** \brief Get the goal bias the planner is using */
-            double getGoalBias(void) const
-            {
-                return goalBias_;
-            }
-
-            /** \brief Set the range the planner is supposed to use.
-
-                This parameter greatly influences the runtime of the
-                algorithm. It represents the maximum length of a
-                motion to be added in the tree of motions. */
-            void setRange(double distance)
-            {
-                maxDistance_ = distance;
-            }
-
-            /** \brief Get the range the planner is using */
-            
-            double getRange(void) const
-            {
-                return maxDistance_;
-            }
-            
-
             /** \brief When the planner attempts to rewire the tree,
-                it does so by looking at some of the neighbors within
-                a computed radius. The computation of that radius
-                depends on the multiplicative factor set here.
-                Set this parameter should be set at least to the side
-                length of the (bounded) state space. E.g., if the state
-                space is a box with side length L, then this parameter
-                should be set to at least L for rapid and efficient
-                convergence in trajectory space. */
+             *  it does so by looking at some of the neighbors within
+             *  a computed radius. The computation of that radius
+             *  depends on the multiplicative factor set here.
+             *  Set this parameter should be set at least to the side
+             *  length of the (bounded) state space. E.g., if the state
+             *  space is a box with side length L, then this parameter
+             *  should be set to at least L for rapid and efficient
+             *   convergence in trajectory space. 
+             */
             void setBallRadiusConstant(double ballRadiusConstant)
             {
                 ballRadiusConst_ = ballRadiusConstant;
             }
 
             /** \brief Get the multiplicative factor used in the
-                computation of the radius whithin which tree rewiring
-                is done. */
+             *  computation of the radius whithin which tree rewiring
+             *  is done. 
+             */
             double getBallRadiusConstant(void) const
             {
                 return ballRadiusConst_;
             }
-
-            /** \brief When the planner attempts to rewire the tree,
-                it does so by looking at some of the neighbors within
-                a computed radius. That radius is bounded by the value
-                set here. This parameter should ideally be equal longest
-                straight line from the initial state to anywhere in the
-                state space. In other words, this parameter should be
-                "sqrt(d) L", where d is the dimensionality of space
-                and L is the side length of a box containing the obstacle free space. */
             
-            void setMaxBallRadius(double maxBallRadius)
+            /** \brief 
+             */
+            void setRegionalSampling(bool regionalSampling)
             {
-                ballRadiusMax_ = maxBallRadius;
-            }
-            
-            /** \brief Get the maximum radius the planner uses in the
-                tree rewiring step */
-            
-            double getMaxBallRadius(void) const
-            {
-                return ballRadiusMax_;
-            }
-            
-            /** \brief Set a different nearest neighbors datastructure */
-            template<template<typename T> class NN>
-            void setNearestNeighbors(void)
-            {
-                nn_.reset(new NN<Motion*>());
+                regionalSampling_ = regionalSampling;
             }
 
-            /** \brief Option that delays collision checking procedures.
-                 When it is enabled, all neighbors are sorted by cost. The
-                 planner then goes through this list, starting with the lowest
-                 cost, checking for collisions in order to find a parent. The planner
-                 stops iterating through the list when a collision free parent is found.
-                 This prevents the planner from collsion checking each neighbor, reducing
-                 computation time in scenarios where collision checking procedures are expensive.*/
-            
-            void setDelayCC(bool delayCC)
+            /** \brief 
+             */
+            bool getRegionalSampling(void) const
             {
-                delayCC_ = delayCC;
+                return regionalSampling_;
             }
             
-
-            /** \brief Get the state of the delayed collision checking option */
-            
-            bool getDelayCC(void) const
+            /** \brief 
+             */
+            void setSamplesPerStep(int samplesPerStep)
             {
-                return delayCC_;
+                samplesPerStep_ = samplesPerStep;
             }
-            
 
+            /** \brief 
+             */
+            int getSamplesPerStep(void) const
+            {
+                return samplesPerStep_;
+            }
+    
             virtual void setup(void);
-
+            
         protected:
 
-
-            /** \brief Representation of a motion */
-            class Motion
-            {
-            public:
-
-                Motion(void) : state(NULL), parent(NULL), cost(0.0)
-                {
-                }
-
-                /** \brief Constructor that allocates memory for the state */
-                Motion(const base::SpaceInformationPtr &si) : state(si->allocState()), parent(NULL), cost(0.0)
-                {
-                }
-
-                ~Motion(void)
-                {
-                }
-
-                /** \brief The state contained by the motion */
-                base::State       *state;
-
-                /** \brief The parent motion in the exploration tree */
-                Motion            *parent;
-
-                /** \brief The cost of this motion */
-                double             cost;
-
-                /** \brief The set of motions descending from the current motion */
-                std::vector<Motion*> children;
-            };
 
             /** \brief Free the memory allocated by this planner */
             void freeMemory(void);
 
-            /** \brief Sort the near neighbors by cost */
-            static bool compareMotion(const Motion* a, const Motion* b)
-            {
-                return (a->cost < b->cost);
-            }
-
-            /** \brief Compute distance between motions (actually distance between contained states) */
-            double distanceFunction(const Motion* a, const Motion* b) const
-            {
-                return si_->distance(a->state, b->state);
-            }
-
-            /** \brief Removes the given motion from the parent's child list */
-            void removeFromParent(Motion *m);
-
-            /** \brief Updates the cost of the children of this node by adding the delta */
-            void updateChildCosts(Motion *m, double delta);
-
             /** \brief State sampler */
             base::StateSamplerPtr                          sampler_;
 
-            /** \brief A nearest-neighbors datastructure containing the tree of motions */
-            boost::shared_ptr< NearestNeighbors<Motion*> > nn_;
-
-            /** \brief The fraction of time the goal is picked as the state to expand towards (if such a state is available) */
-            double                                         goalBias_;
-
-            /** \brief The maximum length of a motion to be added to a tree */
-            double                                         maxDistance_;
-
             /** \brief The random number generator */
             RNG                                            rng_;
-
-            /** \brief Shrink rate of radius the planner uses to find near neighbors and rewire */
+            
+            /** \brief Shrink rate of radius the planner uses to find near 
+             *   neighbors and rewire 
+             */
             double                                         ballRadiusConst_;
+            
+            /**
+             *
+             */
+            bool                                           regionalSampling_;
+            
+            /**
+             *
+             */
+            int                                            samplesPerStep_;
 
-            /** \brief Maximum radius the planner uses to find near neighbors and rewire */
-            double                                         ballRadiusMax_;
+        private:
+            prrts_system_t * prrtsSystem_;
+            prrts_options_t options_;
+            ompl::base::StateSpacePtr stateSpace_;
+            int dimensions_;
+            double *init_config;
+            double *target_config;
+            double *max_config;
+            double *min_config;
+            
+            /** \brief Convinience function to initialize the prrts_system_t 
+             *  struct needed by the prrts C implementation.
+             *
+             */
+            bool setupPrrtsSystem ();
+            
+            /** \brief Setup the prrts_options_t data structure needed by the
+             *   prrts C implementation.
+             */
+            
+            void setupPrrtsOptions ();
+              
+            /** \brief Hack to get around type conversion issue in C callback
+             *  the prrts_clear_func encapsulates the isValid() function.
+             *
+             *  Since a C++ member function can not be simply passes to a
+             *  C function pointer, this detour is taken to rather do the 
+             *  callback via a static function. The caller then passes the 
+             *  'this' object to actually invoke the member function.
+             *  So essentially the function calls the object's isValid() 
+             *  state validity checker.
+             */             
+            static bool prrts_clear_func(void * usrPtr, const double *config);
+            
+            /** \brief A helper method to wrap the SpaceInformation.isValid 
+             *   function
+             *
+             *  This private helper function is an indirection to the 
+             *  SpaceInformation.isValid(State * s) function. This is needed
+             *  for the moment, since prrts represents space values as a 
+             *  simple array of doubles, which first needs to be converted to
+             *  ompl::base::State.
+             */
+            bool isValid (const double *config);
+            
+            /** \brief Hack to get around type conversion issue in C callback
+             *  the prrts_link_func encapsulates the checkMotion() function.
+             *
+             *  Since a C++ member function can not be simply passes to a
+             *  C function pointer, this detour is taken to rather do the 
+             *  callback via a static function. The caller then passes the 
+             *  'this' object to actually invoke the member function.
+             *  So essentially the function calls the object's checkMotion() 
+             *  motion validator, to validate the motion between two states.
+             */             
+            static bool prrts_link_func (void * usrPtr, const double *config1
+                                                      , const double *config2);
 
-            /** \brief Option to delay and reduce collision checking within iterations */
-            bool                                           delayCC_;
+            /** \brief A helper method to wrap the SpaceInformation.checkMotion 
+             *   function
+             *
+             *  This private helper function is an indirection to the 
+             *  SpaceInformation.checkMotion(State * s1, State * s2) function. 
+             *  This is needed for the moment, since prrts represents space 
+             *  values as an array of doubles, which first needs to be 
+             *  converted to ompl::base::State.
+             */
+            bool checkMotion (const double *config1, const double *config2);         
+            
+            /** \brief Hack to get around type conversion issue in C callback
+             *  the prrts_in_goal_func encapsulates the isSatisfied() function.
+             *
+             *  Since a C++ member function can not be simply passed to a
+             *  C function pointer, this detour is taken to rather do the 
+             *  callback via a static function. The caller then passes the 
+             *  'this' object to actually invoke the member function.
+             *  So essentially the function calls the object's checkMotion() 
+             *  motion validator, to validate the motion between two states.
+             */            
+            static bool prrts_in_goal (void * usrPtr, const double *config);
 
-        };
+            /** \brief A helper method to wrap the Goal.isSatisfied
+             *   function
+             *
+             *  This private helper function is an indirection to the 
+             *  Goal.isSatisfied(State * s1) function. 
+             *  This is needed for the moment, since prrts represents space 
+             *  values as an array of doubles, which first needs to be 
+             *  converted to ompl::base::State.
+             */
+            bool isSatisfied (const double *config1);      
+            
+            /** \brief Compute distance between states  
+             */
+ 
+            static double prrts_dist_func(void * usrPtr, const double *config1
+                                        , const double * config2);
 
+            /** \brief Compute distance between states  
+             */
+            double distanceFunction(const double *config1
+                                  , const double *config2);   
+                                  
+            PRRTstar_wrapper * wrapObjToStruct();                                
+                                                                                                                        
+         };
+         
     }
 }
 

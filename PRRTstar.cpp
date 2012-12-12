@@ -36,41 +36,56 @@
 
 #include "PRRTstar.h"
 #include "ompl/base/goals/GoalSampleableRegion.h"
+#include "ompl/base/goals/GoalState.h"
 #include "ompl/datastructures/NearestNeighborsGNAT.h"
+#include "ompl/base/StateSpaceTypes.h"
+#include "ompl/base/GoalTypes.h"
 #include "ompl/tools/config/SelfConfig.h"
+
+extern "C"{
+#include "utils/alloc.h"
+#include "prrts.h"
+}
+
 #include <algorithm>
 #include <limits>
 #include <map>
+#include <assert.h>
+
+
+struct ompl::geometric::PRRTstar_wrapper {
+    ompl::geometric::PRRTstar * prrtstar_obj;
+         
+};
 
 ompl::geometric::PRRTstar::PRRTstar(const base::SpaceInformationPtr &si) 
     : base::Planner(si, "PRRTstar")
 {
     specs_.approximateSolutions = true;
     specs_.optimizingPaths = true;
-
-    goalBias_ = 0.05;
-    //TODO : Enable maxDistance_ ballRadiusMax_ and delayCC_ once core 
-    //       functionalities have been implemented.
-    maxDistance_ = 0.0;
-    ballRadiusMax_ = 0.0;
-    ballRadiusConst_ = 1.0;
-    delayCC_ = true;
-
-    Planner::declareParam<double>("range", this, &PRRTstar::setRange
-                                 , &PRRTstar::getRange);
-    Planner::declareParam<double>("goal_bias", this, &PRRTstar::setGoalBias
-                                 , &PRRTstar::getGoalBias);
+    
+    /* Get the StateSpacePtr from the SpaceInformationPtr. This is needed
+     * to check the space type and also convert the double [] used to 
+     * represent a state in the current prrts implementation and convert it 
+     * to a ompl::base::State
+     */
+    
+    stateSpace_            = si_->getStateSpace();
+    dimensions_            = si_->getStateDimension();
+    ballRadiusConst_       = 5.0;
+    regionalSampling_      = false;
+    samplesPerStep_        = 1;
     Planner::declareParam<double>("ball_radius_constant", this
                                  , &PRRTstar::setBallRadiusConstant
-                                 , &PRRTstar::getBallRadiusConstant);
-                                  
-    Planner::declareParam<double>("max_ball_radius", this
-                                 , &PRRTstar::setMaxBallRadius
-                                 , &PRRTstar::getMaxBallRadius);
-    Planner::declareParam<bool>("delay_cc", this
-                                 , &PRRTstar::setDelayCC
-                                 , &PRRTstar::getDelayCC);
-    
+                                 , &PRRTstar::getBallRadiusConstant);  
+
+    Planner::declareParam<bool>("regional_sampling", this
+                                 , &PRRTstar::setRegionalSampling
+                                 , &PRRTstar::getRegionalSampling);  
+                                 
+    Planner::declareParam<int>("samples_per_step", this
+                                 , &PRRTstar::setSamplesPerStep
+                                 , &PRRTstar::getSamplesPerStep);                                   
 }
 
 ompl::geometric::PRRTstar::~PRRTstar(void)
@@ -79,25 +94,17 @@ ompl::geometric::PRRTstar::~PRRTstar(void)
 }
 
 void ompl::geometric::PRRTstar::setup(void)
-{
-    Planner::setup();
+{   
+    /*
     tools::SelfConfig sc(si_, getName());
     sc.configurePlannerRange(maxDistance_);
+    */
+    
+    Planner::setup();
+    if (!setupPrrtsSystem())
+        setup_ = false;
+    setupPrrtsOptions();
 
-    ballRadiusMax_ = si_->getMaximumExtent();
-    ballRadiusConst_ = maxDistance_ * 
-                       sqrt((double)si_->getStateSpace()->getDimension());
-
-    delayCC_ = true;
-
-    if (!nn_)
-        nn_.reset(new NearestNeighborsGNAT<Motion*>());
-    nn_->setDistanceFunction(boost::bind(&PRRTstar::distanceFunction
-                                        , this
-                                        , _1
-                                        , _2
-                                        )
-                            );
 }
 
 void ompl::geometric::PRRTstar::clear(void)
@@ -105,319 +112,36 @@ void ompl::geometric::PRRTstar::clear(void)
     Planner::clear();
     sampler_.reset();
     freeMemory();
+    /*
     if (nn_)
         nn_->clear();
+    */
 }
 
-ompl::base::PlannerStatus ompl::geometric::PRRTstar::solve(const base::PlannerTerminationCondition &ptc)
+ompl::base::PlannerStatus ompl::geometric::PRRTstar::solve(
+                                 const base::PlannerTerminationCondition &ptc)
 {
     std::cout << "Executing solve...." << std::endl;
     checkValidity();
-    base::Goal                 *goal   = pdef_->getGoal().get();
-    base::GoalSampleableRegion *goal_s = dynamic_cast<base::GoalSampleableRegion*>(goal);
-
-    if (!goal)
-    {
-        logError("Goal undefined");
-        return base::PlannerStatus::INVALID_GOAL;
-    }
-
-    while (const base::State *st = pis_.nextStart())
-    {
-        Motion *motion = new Motion(si_);
-        si_->copyState(motion->state, st);
-        nn_->add(motion);
-    }
-
-    if (nn_->size() == 0)
-    {
-        logError("There are no valid initial states!");
-        return base::PlannerStatus::INVALID_START;
-    }
-
-    if (!sampler_)
-        sampler_ = si_->allocStateSampler();
-
-    logInform("Starting with %u states", nn_->size());
-
-    Motion *solution       = NULL;
-    Motion *approximation  = NULL;
-    double approximatedist = std::numeric_limits<double>::infinity();
-    bool sufficientlyShort = false;
-
-    Motion *rmotion     = new Motion(si_);
-    base::State *rstate = rmotion->state;
-    base::State *xstate = si_->allocState();
-    std::vector<Motion*> solCheck;
-    std::vector<Motion*> nbh;
-    std::vector<double>  dists;
-    std::vector<int>     valid;
-    unsigned int         rewireTest = 0;
-    double               stateSpaceDimensionConstant = 1.0 / (double)si_->getStateSpace()->getDimension();
-
-    while (ptc() == false)
-    {
-        // sample random state (with goal biasing)
-        if (goal_s && rng_.uniform01() < goalBias_ && goal_s->canSample())
-            goal_s->sampleGoal(rstate);
-        else
-            sampler_->sampleUniform(rstate);
-
-        // find closest state in the tree
-        Motion *nmotion = nn_->nearest(rmotion);
-
-        base::State *dstate = rstate;
-
-        // find state to add
-        double d = si_->distance(nmotion->state, rstate);
-        if (d > maxDistance_)
-        {
-            si_->getStateSpace()->interpolate(nmotion->state, rstate, maxDistance_ / d, xstate);
-            dstate = xstate;
-        }
-
-        if (si_->checkMotion(nmotion->state, dstate))
-        {
-            // create a motion
-            double distN = si_->distance(dstate, nmotion->state);
-            Motion *motion = new Motion(si_);
-            si_->copyState(motion->state, dstate);
-            motion->parent = nmotion;
-            motion->cost = nmotion->cost + distN;
-
-            // find nearby neighbors
-            double r = std::min(ballRadiusConst_ * pow(log((double)(1 + nn_->size())) / (double)(nn_->size()), stateSpaceDimensionConstant),
-                                ballRadiusMax_);
-
-            nn_->nearestR(motion, r, nbh);
-            rewireTest += nbh.size();
-
-            // cache for distance computations
-            dists.resize(nbh.size());
-            // cache for motion validity
-            valid.resize(nbh.size());
-            std::fill(valid.begin(), valid.end(), 0);
-
-            if(delayCC_)
-            {
-                // calculate all costs and distances
-                for (unsigned int i = 0 ; i < nbh.size() ; ++i)
-                    nbh[i]->cost += si_->distance(nbh[i]->state, dstate);
-
-                // sort the nodes
-                std::sort(nbh.begin(), nbh.end(), compareMotion);
-
-                for (unsigned int i = 0 ; i < nbh.size() ; ++i)
-                {
-                    dists[i] = si_->distance(nbh[i]->state, dstate);
-                    nbh[i]->cost -= dists[i];
-                }
-
-                // collision check until a valid motion is found
-                for (unsigned int i = 0 ; i < nbh.size() ; ++i)
-                {
-                    if (nbh[i] != nmotion)
-                    {
-                        double c = nbh[i]->cost + dists[i];
-                        if (c < motion->cost)
-                        {
-                            if (si_->checkMotion(nbh[i]->state, dstate))
-                            {
-                                motion->cost = c;
-                                motion->parent = nbh[i];
-                                valid[i] = 1;
-                                break;
-                            }
-                            else
-                                valid[i] = -1;
-                        }
-                    }
-                    else
-                    {
-                        valid[i] = 1;
-                        dists[i] = distN;
-                        break;
-                    }
-                }
-            }
-            else
-            {
-                // find which one we connect the new state to
-                for (unsigned int i = 0 ; i < nbh.size() ; ++i)
-                {
-                    if (nbh[i] != nmotion)
-                    {
-                        dists[i] = si_->distance(nbh[i]->state, dstate);
-                        double c = nbh[i]->cost + dists[i];
-                        if (c < motion->cost)
-                        {
-                            if (si_->checkMotion(nbh[i]->state, dstate))
-                            {
-                                motion->cost = c;
-                                motion->parent = nbh[i];
-                                valid[i] = 1;
-                            }
-                            else
-                                valid[i] = -1;
-                        }
-                    }
-                    else
-                    {
-                        valid[i] = 1;
-                        dists[i] = distN;
-                    }
-                }
-            }
-
-            // add motion to the tree
-            nn_->add(motion);
-            motion->parent->children.push_back(motion);
-
-            solCheck.resize(1);
-            solCheck[0] = motion;
-
-            // rewire tree if needed
-            for (unsigned int i = 0 ; i < nbh.size() ; ++i)
-                if (nbh[i] != motion->parent)
-                {
-                    double c = motion->cost + dists[i];
-                    if (c < nbh[i]->cost)
-                    {
-                        bool v = valid[i] == 0 ? si_->checkMotion(nbh[i]->state, dstate) : valid[i] == 1;
-                        if (v)
-                        {
-                            // Remove this node from its parent list
-                            removeFromParent (nbh[i]);
-                            double delta = c - nbh[i]->cost;
-
-                            // Add this node to the new parent
-                            nbh[i]->parent = motion;
-                            nbh[i]->cost = c;
-                            nbh[i]->parent->children.push_back(nbh[i]);
-                            solCheck.push_back(nbh[i]);
-
-                            // Update the costs of the node's children
-                            updateChildCosts(nbh[i], delta);
-                        }
-                    }
-                }
-
-            // Make sure to check the existing solution for improvement
-            if (solution)
-                solCheck.push_back(solution);
-
-            // check if we found a solution
-            for (unsigned int i = 0 ; i < solCheck.size() ; ++i)
-            {
-                double dist = 0.0;
-                bool solved = goal->isSatisfied(solCheck[i]->state, &dist);
-                sufficientlyShort = solved ? goal->isPathLengthSatisfied(solCheck[i]->cost) : false;
-
-                if (solved)
-                {
-                    if (sufficientlyShort)
-                    {
-                        solution = solCheck[i];
-                        break;
-                    }
-                    else if (!solution || (solCheck[i]->cost < solution->cost))
-                    {
-                        solution = solCheck[i];
-                    }
-                }
-                else if (!solution && dist < approximatedist)
-                {
-                    approximation = solCheck[i];
-                    approximatedist = dist;
-                }
-            }
-        }
-
-        // terminate if a sufficient solution is found
-        if (solution && sufficientlyShort)
-            break;
-    }
-
-    double solutionCost;
-    bool approximate = (solution == NULL);
-    bool addedSolution = false;
-    if (approximate)
-    {
-        solution = approximation;
-        solutionCost = approximatedist;
-    }
-    else
-        solutionCost = solution->cost;
-
-    if (solution != NULL)
-    {
-        // construct the solution path
-        std::vector<Motion*> mpath;
-        while (solution != NULL)
-        {
-            mpath.push_back(solution);
-            solution = solution->parent;
-        }
-
-        // set the solution path
-        PathGeometric *path = new PathGeometric(si_);
-        for (int i = mpath.size() - 1 ; i >= 0 ; --i)
-            path->append(mpath[i]->state);
-        pdef_->addSolutionPath(base::PathPtr(path), approximate, solutionCost);
-        addedSolution = true;
-    }
-
-    si_->freeState(xstate);
-    if (rmotion->state)
-        si_->freeState(rmotion->state);
-    delete rmotion;
-
-    logInform("Created %u states. Checked %lu rewire options.", nn_->size(), rewireTest);
-
-    return base::PlannerStatus(addedSolution, approximate);
+    assert(setup_ == true);
+    assert(prrtsSystem_ != NULL);
+    prrts_run_for_samples(prrtsSystem_, &options_, 2, 1000);
+    return (ompl::base::PlannerStatus::StatusType)NULL;
 }
 
-void ompl::geometric::PRRTstar::removeFromParent(Motion *m)
-{
-    std::vector<Motion*>::iterator it = m->parent->children.begin ();
-    while (it != m->parent->children.end ())
-    {
-        if (*it == m)
-        {
-            it = m->parent->children.erase(it);
-            it = m->parent->children.end ();
-        }
-        else
-            ++it;
-    }
-}
-
-void ompl::geometric::PRRTstar::updateChildCosts(Motion *m, double delta)
-{
-    for (size_t i = 0; i < m->children.size(); ++i)
-    {
-        m->children[i]->cost += delta;
-        updateChildCosts(m->children[i], delta);
-    }
-}
 
 void ompl::geometric::PRRTstar::freeMemory(void)
 {
-    if (nn_)
-    {
-        std::vector<Motion*> motions;
-        nn_->list(motions);
-        for (unsigned int i = 0 ; i < motions.size() ; ++i)
-        {
-            if (motions[i]->state)
-                si_->freeState(motions[i]->state);
-            delete motions[i];
-        }
-    }
+    free(prrtsSystem_);
+    delete[] init_config;
+    delete[] target_config;
+    delete[] max_config;
+    delete[] min_config;
 }
 
 void ompl::geometric::PRRTstar::getPlannerData(base::PlannerData &data) const
 {
+    /*
     Planner::getPlannerData(data);
 
     std::vector<Motion*> motions;
@@ -427,6 +151,252 @@ void ompl::geometric::PRRTstar::getPlannerData(base::PlannerData &data) const
     for (unsigned int i = 0 ; i < motions.size() ; ++i)
         data.addEdge (base::PlannerDataVertex (motions[i]->parent ? motions[i]->parent->state : NULL),
                       base::PlannerDataVertex (motions[i]->state));
+     */
 }
+
+/* Private helper functions */
+
+bool ompl::geometric::PRRTstar::setupPrrtsSystem()
+{
+    /* Allocate memory for the prrts_system_t */
+    if ((prrtsSystem_ = struct_alloc(prrts_system_t)) == NULL)
+        return false;
+        
+    using namespace ompl::base;
+    /**TODO - Adding a check to ensure the supplied state is a RealVectorSpace
+     *       for the present the underlying datastructure kdtree used by the
+     *       prrts implementation cannot handle unbounded revolute joins.
+     *
+     *       Syed Hassan added a patch to fix that. Needs to be integreted.
+     */
+    int spaceType  = stateSpace_->getType();
+    if (spaceType != STATE_SPACE_REAL_VECTOR)
+        return false;
+        
+    init_config   = new double[dimensions_];
+    target_config = new double[dimensions_];
+    max_config    = new double[dimensions_];
+    min_config    = new double[dimensions_];
+    
+    //LOG : print dimensions_
+    std::cout<< "Number of dimensions_ : "<< dimensions_ << std::endl;
+    //LOG : end
+
+    /* get start states */
+    State * st_state = pdef_->getStartState(0);
+    for (int i = 0; i < dimensions_ ; i++)
+        init_config[i] = st_state->as<RealVectorStateSpace::StateType>()
+                                                               ->operator[](i);
+    //LOG : print init_config values
+    std::cout<< "Init Config : "<< std::endl;    
+    for (int i = 0; i< dimensions_; i++)
+        std::cout <<  init_config[i] << " ";
+    std::cout << std::endl;
+    //LOG : end
+    
+    /* get the target states */
+    int goalType = pdef_->getGoal()->getType();	
+    
+    /**TODO - Adding a check to ensure that the goal has only a single goal
+     *       state. Not sure if prrts can handle goal with multiple states.
+     *       Or a goal samplable region. type GOAL_STATE means that the goal
+     *       can be cast to a single GoalState object.
+     *
+     *       Discuss with Dr. Alterovitz.
+     */
+    if (goalType != GOAL_STATE )
+        return false;
+    
+    State * end_state = pdef_->getGoal()->as<GoalState>()->getState();
+    for (int i = 0; i < dimensions_ ; i++)
+        target_config[i] = end_state->as<RealVectorStateSpace::StateType>()
+                                                              ->operator[](i);
+                                                               
+    //LOG : print target_config values
+    std::cout<< "Target Config : "<< std::endl;    
+    for (int i = 0; i< dimensions_; i++)
+        std::cout <<  target_config[i] << " ";
+    std::cout << std::endl;       
+    //LOG : end                                                  
+    
+    /* get the max and min bounds */
+
+    RealVectorBounds rb = stateSpace_->as<RealVectorStateSpace>()->getBounds();
+    std::vector<double> lowerBound = rb.low;
+    std::vector<double> upperBound = rb.high;
+    
+    for (unsigned int i=0; i<lowerBound.size(); i++){
+        min_config[i] = lowerBound.at(i);
+    }
+    
+    for (unsigned int i=0; i<upperBound.size(); i++){
+        max_config[i] = upperBound.at(i);
+
+    }
+    
+    //LOG : print min and max bounds
+    std::cout<< "Min Config : "<< std::endl;    
+    for (int i = 0; i< dimensions_; i++)
+        std::cout <<  min_config[i] << " ";
+    std::cout << std::endl;       
+    std::cout<< "Max Config : "<< std::endl;    
+    for (int i = 0; i< dimensions_; i++)
+        std::cout <<  max_config[i] << " ";
+    std::cout << std::endl;   
+    //LOG : end     
+    ompl::geometric::PRRTstar_wrapper * w 
+                                       = new ompl::geometric::PRRTstar_wrapper;
+    w->prrtstar_obj = this;
+    prrtsSystem_->dimensions   = dimensions_;
+    prrtsSystem_->init         = init_config;
+    prrtsSystem_->min          = min_config;
+    prrtsSystem_->max          = max_config;
+    prrtsSystem_->target       = target_config;
+    prrtsSystem_->space_config = w;
+    
+    /* system_data_alloc_func is not being used in our implementation
+     * instead have introduces a new void* data member in the prrts_system_t
+     * to directly pass the PRRTstar object.
+     */
+    prrtsSystem_->system_data_alloc_func = NULL ;
+    prrtsSystem_->system_data_free_func  = NULL;
+     
+    prrtsSystem_->dist_func    = PRRTstar::prrts_dist_func;
+    prrtsSystem_->in_goal_func = PRRTstar::prrts_in_goal;
+    prrtsSystem_->clear_func   = PRRTstar::prrts_clear_func;
+    prrtsSystem_->link_func    = PRRTstar::prrts_link_func;
+    
+    return true;
+
+}
+
+void ompl::geometric::PRRTstar::setupPrrtsOptions ()
+{
+    memset(&options_, 0, sizeof(options_));
+    options_.gamma             = ballRadiusConst_;
+    options_.regional_sampling = regionalSampling_;
+    options_.samples_per_step  = samplesPerStep_;
+
+}
+
+bool ompl::geometric::PRRTstar::isValid(const double *config)
+{
+    ompl::base::RealVectorStateSpace state;
+    std::vector<double> real;    
+    for (int i = 0; i < this->dimensions_; i++){
+        real.push_back(config[i]);
+    }
+    this->stateSpace_->copyFromReals((ompl::base::State*)(&state), real);
+    bool valid =  si_->isValid((ompl::base::State*)&state);
+    return valid;
+}
+
+bool ompl::geometric::PRRTstar::checkMotion (const double *config1
+                                           , const double *config2)
+{
+    ompl::base::RealVectorStateSpace state1, state2;
+    std::vector<double> real1, real2;    
+    for (int i = 0; i < this->dimensions_; i++){
+        real1.push_back(config1[i]);
+        real2.push_back(config2[i]);
+    }
+    
+    this->stateSpace_->copyFromReals((ompl::base::State*)(&state1), real1);
+    this->stateSpace_->copyFromReals((ompl::base::State*)(&state2), real2);
+    
+    bool valid =  si_->checkMotion((ompl::base::State*)&state1
+                                 , (ompl::base::State*)&state2);
+    return valid;
+
+}
+
+bool ompl::geometric::PRRTstar::isSatisfied (const double *config)
+{
+    ompl::base::RealVectorStateSpace state;
+    std::vector<double> real;    
+    for (int i = 0; i < this->dimensions_; i++){
+        real.push_back(config[i]);
+    }
+    this->stateSpace_->copyFromReals((ompl::base::State*)(&state), real);
+    
+    bool valid = pdef_->getGoal()->isSatisfied((ompl::base::State*)&state);
+    return valid;
+}
+
+double ompl::geometric::PRRTstar::distanceFunction(const double *config1
+                                                 , const double *config2) 
+{
+    std::cout << "Log2" << std::endl;
+    ompl::base::State *state1 = stateSpace_->allocState();
+    ompl::base::State *state2 = stateSpace_->allocState();
+    
+    std::vector<double>  real1, real2;    
+    for (int i = 0; i < this->dimensions_; i++){
+        real1.push_back(config1[i]);
+        real2.push_back(config2[i]);
+    }
+    std::cout << "Log3" << std::endl;
+    for( std::vector<double>::const_iterator i = real1.begin(); i != real1.end(); ++i)
+        std::cout << *i << ' ';
+    //this->stateSpace_->copyFromReals((ompl::base::State*)(&state1), real1);
+    //this->stateSpace_->copyFromReals((ompl::base::State*)(&state2), real2);
+    //si_->printState(state1);
+    //si_->printState((ompl::base::State*)state2);
+    //exit(1);
+    //return  si_->distance((ompl::base::State*)&state1
+    //                             , (ompl::base::State*)&state2);
+    //si_->freeState(state1);
+    //si_->freeState(state2);
+    return 0;
+}     
+
+/* end of private helper functions */
+
+/* private static functions. These are used to set the prrts_system_t
+   environment */
+
+bool ompl::geometric::PRRTstar::prrts_clear_func(void * usrPtr
+                                               , const double *config)
+{
+    //return static_cast<PRRTstar*>(usrPtr)->isValid(config);
+    return true;
+}
+
+bool ompl::geometric::PRRTstar::prrts_link_func (void * usrPtr
+                                               , const double *config1
+                                               , const double *config2)
+{
+    //return static_cast<PRRTstar*>(usrPtr)->checkMotion(config1, config2);
+    return true;
+
+}    
+
+bool ompl::geometric::PRRTstar::prrts_in_goal (void * usrPtr
+                                             , const double *config)
+{
+    //return static_cast<PRRTstar*>(usrPtr)->isSatisfied(config);
+    return true;
+}
+
+double ompl::geometric::PRRTstar::prrts_dist_func(void * usrPtr
+                                                , const double *config1
+                                                , const double *config2) 
+{
+    std::cout << "Log1" << std::endl;
+    return static_cast<PRRTstar*>(usrPtr)->distanceFunction(config1,config2);
+
+
+}     
+
+ompl::geometric::PRRTstar_wrapper * ompl::geometric::PRRTstar::wrapObjToStruct()
+{
+    ompl::geometric::PRRTstar_wrapper * w = new ompl::geometric::PRRTstar_wrapper;
+    w->prrtstar_obj = this;
+    return w;
+
+}                                       
+
+                                                                                                                        
+
 
 

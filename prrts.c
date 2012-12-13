@@ -460,7 +460,7 @@ worker_near_callback(void *worker_arg, int no, void *near_node, double dist)
 
     near_link = ((prrts_node_t*)near_node)->link;
 
-    /* TODO: reference acquire on near_link */
+    /**\todo: reference acquire on near_link */
     
     check_crc32_link(near_link);
 
@@ -647,7 +647,7 @@ update_best_path(worker_t *worker, prrts_link_t *link, double radius)
                 best_dist += (system->dist_func)(worker->system_data,
                     best_path->node->config, system->target);
 
-                /* TODO: the dist_func is called for
+                /**\todo: the dist_func is called for
                  * every update, might be worth
                  * caching */
             }
@@ -694,7 +694,7 @@ update_children(worker_t *worker, prrts_link_t *new_parent, prrts_link_t *old_pa
         check_crc32_link(old_child);
 
         if (is_link_expired(old_child)) {
-            /* TODO: stat_concurrent_rewirings++ */
+            /**\todo: stat_concurrent_rewirings++ */
             assert(worker->runtime->thread_count > 1);
             continue;
         }
@@ -710,11 +710,11 @@ update_children(worker_t *worker, prrts_link_t *new_parent, prrts_link_t *old_pa
         new_child = set_node_link(worker, node, old_child, old_child->link_cost, new_parent);
 
         if (new_child != NULL) {
-            /* TODO: stat_updated_children_count++ */
+            /**\todo: stat_updated_children_count++ */
             update_children(worker, new_child, old_child, radius);
             update_best_path(worker, new_child, radius);
         } else {
-            /* TODO: stat_concurrent_rewirings++ */
+            /**\todo: stat_concurrent_rewirings++ */
             assert(worker->runtime->thread_count > 1);
             assert(node->link != old_child);
         }
@@ -763,7 +763,7 @@ rewire(worker_t *worker, prrts_link_t *old_link, double link_cost, prrts_node_t 
         new_link = set_node_link(worker, node, old_link, link_cost, parent_link);
 
         if (new_link != NULL) {
-            /* TODO: stat_rewired_links++ */
+            /**\todo: stat_rewired_links++ */
             
             update_children(worker, new_link, old_link, radius);
             update_best_path(worker, new_link, radius);
@@ -800,7 +800,7 @@ rewire(worker_t *worker, prrts_link_t *old_link, double link_cost, prrts_node_t 
          */
         assert(worker->runtime->thread_count > 1);
 
-        /* TODO: stat_concurrent_rewirings++ */
+        /**\todo: stat_concurrent_rewirings++ */
 
         updated_old_link = node->link;
         assert(old_link != updated_old_link);
@@ -824,7 +824,7 @@ near_list_compare(const void *a, const void *b)
     return (a_cost < b_cost ? -1 : (a_cost > b_cost ? 1 : 0));
 }
 
-/* TODO: steer makes some assumptions, it's implementation should be
+/**\todo: steer makes some assumptions, it's implementation should be
  * left to the system */
 static void
 steer(size_t dimensions, double *new_config, const double *target_config, double scale)
@@ -954,7 +954,7 @@ worker_step(worker_t *worker, int step_no)
              */
             kd_insert(worker->runtime->kd_tree, new_node->config, new_node);
 
-            /* TODO: reference release on near_list[i]->link */
+            /**\todo: reference release on near_list[i]->link */
             
             /*
              * Now we rewire the remaining nodes in the
@@ -978,14 +978,14 @@ worker_step(worker_t *worker, int step_no)
                        new_node,
                        radius);
 
-                /* TODO: reference release on near_list[j].link */
+                /**\todo: reference release on near_list[j].link */
             }
 
             time_stats_stop(&worker->update_time);
             return true;
         }
 
-        /* TODO: reference release on near_list[j].link */
+        /**\todo: reference release on near_list[j].link */
     }
     time_stats_stop(&worker->update_time);
 
@@ -1471,7 +1471,7 @@ prrts_run(prrts_system_t *system, prrts_options_t *options, int thread_count, lo
 
     start_workers(workers, thread_count);
 
-    /* end_time (TODO) */
+    /**\todo end_time */
     hrtimer_get();
 
     link_dist_sum = 0.0;

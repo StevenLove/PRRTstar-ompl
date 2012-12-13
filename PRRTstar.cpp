@@ -192,14 +192,9 @@ void ompl::geometric::PRRTstar::getPlannerData(base::PlannerData &data) const
 {
     /*init_config
     Planner::getPlannerData(data);
-
-    std::vector<Motion*> motions;
-    if (nn_)
-        nn_->list(motions);
-
-    for (unsigned int i = 0 ; i < motions.size() ; ++i)
-        data.addEdge (base::PlannerDataVertex (motions[i]->parent ? motions[i]->parent->state : NULL),
-                      base::PlannerDataVertex (motions[i]->state));
+    
+    /**\todo Expose the kd_tree_data structure used by the prrts planner.
+     * so that it can be used to populate the Graph in the PlannerData.
      */
 }
 

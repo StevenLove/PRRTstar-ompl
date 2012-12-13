@@ -56,8 +56,13 @@ extern "C"{
 ompl::geometric::PRRTstar::PRRTstar(const base::SpaceInformationPtr &si) 
     : base::Planner(si, "PRRTstar")
 {
-    specs_.approximateSolutions = true;
+    /*TODO - Does prrts have notion of approximate solutions
+           - What are the Goal Types prrts can handle (for that matter rrts)
+     */
+    specs_.approximateSolutions = false;
     specs_.optimizingPaths = true;
+    specs_.directed = true;
+    specs_.multithreaded = true;
     
     /* Get the StateSpacePtr from the SpaceInformationPtr. This is needed
      * to check the space type and also convert the double[], used to 

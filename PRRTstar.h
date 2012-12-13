@@ -93,9 +93,11 @@ namespace ompl
             virtual base::PlannerStatus solve(
                                  const base::PlannerTerminationCondition &ptc);
                                  
-            virtual base::PlannerStatus solve(double solveTime);     
-            
-            virtual base::PlannerStatus solve(size_t sampleCount);                                      
+            /* TODO - Adding this solve method since the prrts datastructires
+             * are not yet integrated with the ompl api, to be accessible to
+             * create a PlannerTerminationCondition
+             */
+            virtual base::PlannerStatus solveForSamples(size_t sampleCount);                                      
 
             virtual void clear(void);
 

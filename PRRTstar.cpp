@@ -120,7 +120,8 @@ void ompl::geometric::PRRTstar::clear(void)
     freeMemory();
 }
 
-ompl::base::PlannerStatus ompl::geometric::PRRTstar::solve(double solveTime)
+ompl::base::PlannerStatus ompl::geometric::PRRTstar::solveForSamples(
+                                                            size_t sampleCount)
 {
     checkValidity();
     assert(setup_ == true);
@@ -135,39 +136,7 @@ ompl::base::PlannerStatus ompl::geometric::PRRTstar::solve(double solveTime)
         //logError("There are no valid initial states!");
         return base::PlannerStatus::INVALID_START;
     }
-    /*TODO - prrts_run_for_duration takes the duration as long, OMPL supplied 
-     * solveTime is a double, so chance of precision loss for decimal portion.
-     * Need to update the prrts_run method to handle doubles instead of longs.
-     */
-    solution_ = prrts_run_for_duration(prrtsSystem_, &options_
-                                     , numOfThreads_, solveTime);
-    if (addPathToSolution()){
-        return base::PlannerStatus::EXACT_SOLUTION;
-    }
-    else{
-        return base::PlannerStatus::TIMEOUT;
-    }
-}
 
-ompl::base::PlannerStatus ompl::geometric::PRRTstar::solve(size_t sampleCount)
-{
-    checkValidity();
-    assert(setup_ == true);
-    assert(prrtsSystem_ != NULL);
-    
-    if (target_config_ ==NULL){
-        //logError("Goal undefined");
-        return base::PlannerStatus::INVALID_GOAL;
-    }
-
-    if (init_config_ ==NULL){
-        //logError("There are no valid initial states!");
-        return base::PlannerStatus::INVALID_START;
-    }
-    /*TODO - prrts_run_for_duration takes the duration as long, OMPL supplied 
-     * solveTime is a double, so chance of precision loss for decimal portion.
-     * Need to update the prrts_run method to handle doubles instead of longs.
-     */
     solution_ = prrts_run_for_samples(prrtsSystem_, &options_, numOfThreads_
                                     , sampleCount);
     
@@ -544,8 +513,8 @@ double ompl::geometric::PRRTstar::prrts_dist_func(void * usrPtr
  */
  
 bool ompl::geometric::PRRTstar::ompl_planner_term_cond(void * usrPtr)
-{
-     return static_cast<PRRTstar*>(usrPtr)->checkPlannerTermCond();
+{   
+    return static_cast<PRRTstar*>(usrPtr)->checkPlannerTermCond();
 }
                                                                                                                     
 

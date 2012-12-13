@@ -32,7 +32,7 @@
 *  POSSIBILITY OF SUCH DAMAGE.
 *********************************************************************/
 
-/* Authors:  */
+/* Authors:  Diptorup Deb*/
 
 #ifndef OMPL_CONTRIB_RRT_STAR_PPRRTstar_
 #define OMPL_CONTRIB_RRT_STAR_PPRRTstar_
@@ -92,6 +92,10 @@ namespace ompl
 
             virtual base::PlannerStatus solve(
                                  const base::PlannerTerminationCondition &ptc);
+                                 
+            virtual base::PlannerStatus solve(double solveTime);     
+            
+            virtual base::PlannerStatus solve(size_t sampleCount);                                      
 
             virtual void clear(void);
 
@@ -146,8 +150,26 @@ namespace ompl
             {
                 return samplesPerStep_;
             }
-    
+            
+            /** \brief 
+             */
+            void setNumOfThreads(int numOfThreads)
+            {
+                numOfThreads_ = numOfThreads;
+            }
+
+            /** \brief 
+             */
+            int getNumOfThreads(void) const
+            {
+                return numOfThreads_;
+            }
+            
+            /** \brief 
+             */
             virtual void setup(void);
+            
+            
             
         protected:
 
@@ -179,12 +201,14 @@ namespace ompl
         private:
             prrts_system_t * prrtsSystem_;
             prrts_options_t options_;
+            prrts_solution_t * solution_;
             ompl::base::StateSpacePtr stateSpace_;
             int dimensions_;
-            double *init_config;
-            double *target_config;
-            double *max_config;
-            double *min_config;
+            double *init_config_;
+            double *target_config_;
+            double *max_config_;
+            double *min_config_;
+            int numOfThreads_;
             
             /** \brief Convinience function to initialize the prrts_system_t 
              *  struct needed by the prrts C implementation.
@@ -278,7 +302,14 @@ namespace ompl
              */
             double distanceFunction(const double *config1
                                   , const double *config2);   
+            
+            bool addPathToSolution();                                
                                   
+            #ifdef _OPENMP
+            #define get_num_procs() omp_get_max_threads()
+            #else   
+            int get_num_procs();
+            #endif
          };
          
     }

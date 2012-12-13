@@ -127,12 +127,12 @@ ompl::base::PlannerStatus ompl::geometric::PRRTstar::solve(double solveTime)
     assert(prrtsSystem_ != NULL);
     
     if (target_config_ ==NULL){
-        logError("Goal undefined");
+        //logError("Goal undefined");
         return base::PlannerStatus::INVALID_GOAL;
     }
 
     if (init_config_ ==NULL){
-        logError("There are no valid initial states!");
+        //logError("There are no valid initial states!");
         return base::PlannerStatus::INVALID_START;
     }
     /*TODO - prrts_run_for_duration takes the duration as long, OMPL supplied 
@@ -156,12 +156,12 @@ ompl::base::PlannerStatus ompl::geometric::PRRTstar::solve(size_t sampleCount)
     assert(prrtsSystem_ != NULL);
     
     if (target_config_ ==NULL){
-        logError("Goal undefined");
+        //logError("Goal undefined");
         return base::PlannerStatus::INVALID_GOAL;
     }
 
     if (init_config_ ==NULL){
-        logError("There are no valid initial states!");
+        //logError("There are no valid initial states!");
         return base::PlannerStatus::INVALID_START;
     }
     /*TODO - prrts_run_for_duration takes the duration as long, OMPL supplied 
@@ -188,12 +188,12 @@ ompl::base::PlannerStatus ompl::geometric::PRRTstar::solve(
     assert(prrtsSystem_ != NULL);
     
     if (target_config_ ==NULL){
-        logError("Goal undefined");
+        //logError("Goal undefined");
         return base::PlannerStatus::INVALID_GOAL;
     }
 
     if (init_config_ ==NULL){
-        logError("There are no valid initial states!");
+        //logError("There are no valid initial states!");
         return base::PlannerStatus::INVALID_START;
     }
     

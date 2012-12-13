@@ -16,6 +16,9 @@ typedef void *(*prrts_system_data_alloc_func)(int thread_no
                                             , const double *sample_max);
 typedef void (*prrts_system_data_free_func)(void *system);
 
+/* Added a function pointer to store the ompl - PlannerTerminationCondition */
+typedef bool (*ompl_planner_term_cond)(void *system);
+
 typedef struct prrts_system {
         size_t dimensions;
 
@@ -35,6 +38,11 @@ typedef struct prrts_system {
         /* Diptorup Deb :Adding a void pointer to store the PRRTstar object */
         void* space_config;
         
+        /* Diptorup Deb : 12/13/2012
+         * function pointer to ompl::base::PlannerTerminationCondition.
+         */
+        ompl_planner_term_cond term_cond;
+        
 } prrts_system_t;
 
 typedef struct prrts_options {
@@ -43,6 +51,13 @@ typedef struct prrts_options {
         int samples_per_step;
 } prrts_options_t;
 
+/* Diptorup 12/12/12 - Extend the prrts_solution to include some more metrics
+    near size - near_list_size_stats
+    near time - near_time
+    link time - link_time
+    avg dist  - link_dist_sum / (double)link_time.count
+    update tm - update_time
+ */
 typedef struct prrts_solution {
         double path_cost;
         size_t path_length;

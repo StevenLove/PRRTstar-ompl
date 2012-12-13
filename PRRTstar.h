@@ -209,6 +209,7 @@ namespace ompl
             double *max_config_;
             double *min_config_;
             int numOfThreads_;
+            ompl::base::PlannerTerminationCondition  ptc_;
             
             /** \brief Convinience function to initialize the prrts_system_t 
              *  struct needed by the prrts C implementation.
@@ -302,6 +303,16 @@ namespace ompl
              */
             double distanceFunction(const double *config1
                                   , const double *config2);   
+            
+            /** \brief Check if the PlannerTerminationCondition is satisfied  
+             */
+ 
+            static bool ompl_planner_term_cond(void * usrPtr);
+
+            /** \brief Check if the PlannerTerminationCondition.operator()
+             *   is true.
+             */
+            bool checkPlannerTermCond();   
             
             bool addPathToSolution();                                
                                   

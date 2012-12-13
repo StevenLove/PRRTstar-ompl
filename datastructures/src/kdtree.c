@@ -168,7 +168,7 @@ kd_insert(kd_tree_t *tree, const double *config, void *value)
                 if (actual == NULL) {
                     break;
                 }
-                /* TODO: t->stat_concurrent_inserts++; */
+                /**\todo: t->stat_concurrent_inserts++; */
                 n = actual;
             } else {
                 n = a;
@@ -184,7 +184,7 @@ kd_insert(kd_tree_t *tree, const double *config, void *value)
                 if (actual == NULL) {
                     break;
                 }
-                /* TODO: t->stat_concurrent_inserts++; */
+                /**\todo: t->stat_concurrent_inserts++; */
                 n = actual;
             } else {
                 n = b;
@@ -193,7 +193,7 @@ kd_insert(kd_tree_t *tree, const double *config, void *value)
         }
     }
 
-    /* TODO: add to depth stat */
+    /**\todo: add to depth stat */
 }
 
 typedef struct kd_nearest {

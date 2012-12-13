@@ -1107,8 +1107,12 @@ worker_main(void *arg)
                    worker->link_time.sum / (double)worker->link_time.count);
 #endif
                    
-
-            if (step_no >= (int)runtime->sample_limit) {
+            /* Diptoup Deb; 12/13/2012
+               : For some reason UNIT_MAX was defaulting to 0 and planner 
+                 terminates when asked to run indefinitely without this check
+             */
+            if ((int)runtime->sample_limit >= 1 && 
+                                     step_no >= (int)runtime->sample_limit) {
                 /* __sync_set(&runtime->done, true); */
                 __sync_bool_compare_and_swap(&runtime->done, false, true);
             }

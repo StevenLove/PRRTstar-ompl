@@ -93,7 +93,7 @@ namespace ompl
             virtual base::PlannerStatus solve(
                                  const base::PlannerTerminationCondition &ptc);
                                  
-            /* TODO - Adding this solve method since the prrts datastructires
+            /**\todo - Adding this solve method since the prrts datastructires
              * are not yet integrated with the ompl api, to be accessible to
              * create a PlannerTerminationCondition
              */

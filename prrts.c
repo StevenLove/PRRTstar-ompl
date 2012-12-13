@@ -1106,23 +1106,38 @@ worker_main(void *arg)
 
                    worker->link_time.sum / (double)worker->link_time.count);
 #endif
-                   
-
+            
             if (step_no >= (int)runtime->sample_limit) {
-                /* __sync_set(&runtime->done, true); */
-                __sync_bool_compare_and_swap(&runtime->done, false, true);
+                    /* __sync_set(&runtime->done, true); */
+                    __sync_bool_compare_and_swap(&runtime->done, false, true);
+                }
+            else {
+                /*
+                 * unsuccessful in adding.  refresh the
+                 * step_no, but do not increment it.
+                 */
+                step_no = runtime->step_no;
             }
-        } else {
-            /*
-             * unsuccessful in adding.  refresh the
-             * step_no, but do not increment it.
-             */
-            step_no = runtime->step_no;
         }
+        
+       /* Diptorup Deb: 12/12/12 - 
+        * Added a new check to be used with the ompl wrapper, to 
+        * terminate the planner only when ompl_planner_term_cond 
+        * is true.
+        */
 
-        if (is_main_thread &&
-            runtime->time_limit != 0 && 
-            hrtimer_get() > runtime->time_limit)
+        if (is_main_thread && 
+            (
+             (
+              runtime->time_limit != 0 && 
+              hrtimer_get() > runtime->time_limit
+             ) 
+             ||
+             (
+              system->term_cond(worker->system_data)
+             )
+            )
+           )
         {
             /* __sync_set(&runtime->done, true); */
             __sync_bool_compare_and_swap(&runtime->done, false, true);

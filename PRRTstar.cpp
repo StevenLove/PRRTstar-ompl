@@ -56,7 +56,7 @@ extern "C"{
 ompl::geometric::PRRTstar::PRRTstar(const base::SpaceInformationPtr &si) 
     : base::Planner(si, "PRRTstar")
 {
-    /*TODO - Does prrts have notion of approximate solutions
+    /**\todo - Does prrts have notion of approximate solutions
            - What are the Goal Types prrts can handle (for that matter rrts)
      */
     specs_.approximateSolutions = false;
@@ -212,7 +212,7 @@ bool ompl::geometric::PRRTstar::setupPrrtsSystem()
         return false;
         
     using namespace ompl::base;
-    /**TODO - Adding a check to ensure the supplied state is a RealVectorSpace
+    /**\todo - Adding a check to ensure the supplied state is a RealVectorSpace
      * for the present the underlying datastructure kdtree used by the
      * prrts implementation cannot handle unbounded revolute joins.
      *
@@ -244,7 +244,7 @@ bool ompl::geometric::PRRTstar::setupPrrtsSystem()
     /* get the target states */
     int goalType = pdef_->getGoal()->getType();	
     
-    /**TODO - Adding a check to ensure that the goal has only a single goal
+    /**\todo - Adding a check to ensure that the goal has only a single goal
      * state. Not sure if prrts can handle goal with multiple states. Or a 
      * goal samplable region. type GOAL_STATE means that the goal can be 
      * cast to a single GoalState object.
@@ -457,7 +457,7 @@ bool ompl::geometric::PRRTstar::addPathToSolution()
             stateSpace_->copyFromReals(state, real);
             path->append(state);
         }
-    /*TODO - Does prrts have the notion of approximate solutions ?
+    /**\todo - Does prrts have the notion of approximate solutions ?
      * Does/can the planner return multiple solutions? How can they be 
      * stored?
      */

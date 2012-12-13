@@ -1459,8 +1459,7 @@ prrts_run(prrts_system_t *system, prrts_options_t *options, int thread_count, lo
         err(1, "failed to create workers array");
 
     /*
-     * Set up the sampling regions for the
-     * worker threads.
+     * Set up the sampling regions for the worker threads.
      */
     for (i=0 ; i<thread_count ; ++i) {
         workers[i].runtime = runtime;
@@ -1496,6 +1495,7 @@ prrts_run(prrts_system_t *system, prrts_options_t *options, int thread_count, lo
            link_time.sum / (double)link_time.count * (1e+6 / (double)HRTICK),
            link_dist_sum / (double)link_time.count);
 #endif
+
 
     count_stats_print("near size", &near_list_size_stats);
     printf("\n");

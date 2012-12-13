@@ -117,7 +117,7 @@ void ompl::geometric::PRRTstar::clear(void)
 {
     Planner::clear();
     sampler_.reset();
-    freeMemory();
+    //freeMemory();
 }
 
 ompl::base::PlannerStatus ompl::geometric::PRRTstar::solveForSamples(

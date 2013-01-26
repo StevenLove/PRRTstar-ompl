@@ -1,7 +1,7 @@
 /*********************************************************************
 * Software License Agreement (BSD License)
 *
-*  Copyright (c) 2012, Dipotrup Deb
+*  Copyright (c) 2012,2013 UNC Chapel Hill
 *  All rights reserved.
 *
 *  Redistribution and use in source and binary forms, with or without
@@ -37,21 +37,33 @@
 #include "pRRTstar.h"
 #include "ompl/base/goals/GoalSampleableRegion.h"
 #include "ompl/base/goals/GoalState.h"
-#include "ompl/datastructures/NearestNeighborsGNAT.h"
 #include "ompl/base/StateSpaceTypes.h"
 #include "ompl/base/GoalTypes.h"
 #include "ompl/tools/config/SelfConfig.h"
 
-extern "C"{
-#include "utils/alloc.h"
-#include "prrts.h"
-}
+#include "utils/atomic.h"
 
 #include <algorithm>
 #include <limits>
 #include <map>
 #include <assert.h>
 #include <vector>
+
+/************************************************************************
+************************************************************************/
+
+void ompl::geometric::pRRTstar::printConfig(double *config) 
+{
+    std::cout<< "State Configuration : " ;
+    for (int i = 0 ; i < 2; ++i ) {
+       std::cout << config[i] <<", ";
+    }
+    std::cout<< std::endl;
+}
+
+
+/************************************************************************
+************************************************************************/
 
 ompl::geometric::pRRTstar::pRRTstar(const base::SpaceInformationPtr &si) 
     : base::Planner(si, "pRRTstar")
@@ -97,6 +109,7 @@ ompl::geometric::pRRTstar::pRRTstar(const base::SpaceInformationPtr &si)
 ompl::geometric::pRRTstar::~pRRTstar(void)
 {
     freeMemory();
+    //std::cout << "Destroying pRRTstar object" << cout::endl;
 }
 
 void ompl::geometric::pRRTstar::setup(void)
@@ -107,91 +120,74 @@ void ompl::geometric::pRRTstar::setup(void)
     */
     
     Planner::setup();
-    if (!setupPrrtsSystem())
+    
+    /*if (!setup_temp())
         setup_ = false;
-    setupPrrtsOptions();
+     */
+        
+    //setupKdTree();    
+    //setupThreadedSystem();
 
 }
 
 void ompl::geometric::pRRTstar::clear(void)
 {
     Planner::clear();
-    sampler_.reset();
     //freeMemory();
 }
 
-ompl::base::PlannerStatus ompl::geometric::pRRTstar::solveForSamples(
-                                                            size_t sampleCount)
-{
-    checkValidity();
-    assert(setup_ == true);
-    assert(prrtsSystem_ != NULL);
-    
-    if (target_config_ ==NULL){
-        //logError("Goal undefined");
-        return base::PlannerStatus::INVALID_GOAL;
-    }
-
-    if (init_config_ ==NULL){
-        //logError("There are no valid initial states!");
-        return base::PlannerStatus::INVALID_START;
-    }
-
-    solution_ = prrts_run_for_samples(prrtsSystem_, &options_, numOfThreads_
-                                    , sampleCount);
-    
-    if (addPathToSolution()){
-        return base::PlannerStatus::EXACT_SOLUTION;
-    }
-    else{
-        return base::PlannerStatus::TIMEOUT;
-    }
-}
-
-
 ompl::base::PlannerStatus ompl::geometric::pRRTstar::solve(
                                  const base::PlannerTerminationCondition &ptc)
-{
+{   
+    std::cout<< "############# Executing Solve now ###############"<<std::endl;
     checkValidity();
-    assert(setup_ == true);
-    assert(prrtsSystem_ != NULL);
+    ptc_ = ptc;
     
-    if (target_config_ ==NULL){
-        //logError("Goal undefined");
+    std::cout << "Setting up threaded system now ........" << std::endl;
+    if(!setupThreadedSystem()){
+        return base::PlannerStatus::UNKNOWN;
+    }   
+    
+    std::cout << "Threaded system setup ........." << std::endl;
+    
+    if (targetConfig_ ==NULL){
+        //OMPL_ERROR("Goal undefined");
         return base::PlannerStatus::INVALID_GOAL;
     }
-
-    if (init_config_ ==NULL){
+    if (initConfig_ ==NULL){
         //logError("There are no valid initial states!");
         return base::PlannerStatus::INVALID_START;
     }
-    ptc_ = ptc;
-    prrtsSystem_->term_cond = pRRTstar::ompl_planner_term_cond;
+
+    /* Start separate threads for each Worker object to execute */
+    std::cout << "Start workers now ........." << std::endl;
+    startWorkers(workers_, numOfThreads_);
     
-    solution_ = prrts_run_indefinitely(prrtsSystem_, &options_, numOfThreads_);
     
-    if (addPathToSolution()){
+    
+    //solution_ = prrts_run_indefinitely(prrtsSystem_, &options_, numOfThreads_);
+    
+    if (true){
         return base::PlannerStatus::EXACT_SOLUTION;
     }
     else{
         return base::PlannerStatus::TIMEOUT;
     }
 }
-
 
 void ompl::geometric::pRRTstar::freeMemory(void)
 {
-    free(prrtsSystem_);
-    delete[] init_config_;
-    delete[] target_config_;
-    delete[] max_config_;
-    delete[] min_config_;
+    delete[] initConfig_;
+    delete[] targetConfig_;
+    delete[] maxConfig_;
+    delete[] minConfig_;
+    delete[] workers_;    
 }
 
 void ompl::geometric::pRRTstar::getPlannerData(base::PlannerData &data) const
 {
-    /*init_config
-    Planner::getPlannerData(data);
+    /*initConfig_
+    Planner::getPlannerData(data); */
     
     /**\todo Expose the kd_tree_data structure used by the prrts planner.
      * so that it can be used to populate the Graph in the PlannerData.
@@ -199,129 +195,6 @@ void ompl::geometric::pRRTstar::getPlannerData(base::PlannerData &data) const
 }
 
 /* Private helper functions */
-
-bool ompl::geometric::pRRTstar::setupPrrtsSystem()
-{
-    /* Allocate memory for the prrts_system_t */
-    if ((prrtsSystem_ = struct_alloc(prrts_system_t)) == NULL)
-        return false;
-        
-    using namespace ompl::base;
-    /**\todo - Adding a check to ensure the supplied state is a RealVectorSpace
-     * for the present the underlying datastructure kdtree used by the
-     * prrts implementation cannot handle unbounded revolute joins.
-     *
-     * Syed Hassan added a patch to fix that. Needs to be integreted.
-     */
-    int spaceType  = stateSpace_->getType();
-    if (spaceType != STATE_SPACE_REAL_VECTOR)
-        return false;
-        
-    init_config_   = new double[dimensions_];
-    target_config_ = new double[dimensions_];
-    max_config_    = new double[dimensions_];
-    min_config_    = new double[dimensions_];
-    
-    /* get start states */
-    State * st_state = pdef_->getStartState(0);
-    for (int i = 0; i < dimensions_ ; i++)
-        init_config_[i] = st_state->as<RealVectorStateSpace::StateType>()
-                                                               ->operator[](i);
-    /*
-    //LOG : print init_config values
-    std::cout<< "Init Config : "<< std::endl;    
-    for (int i = 0; i< dimensions_; i++)
-        std::cout <<  init_config_[i] << " ";
-    std::cout << std::endl;
-    //LOG : end
-    */
-    
-    /* get the target states */
-    int goalType = pdef_->getGoal()->getType();	
-    
-    /**\todo - Adding a check to ensure that the goal has only a single goal
-     * state. Not sure if prrts can handle goal with multiple states. Or a 
-     * goal samplable region. type GOAL_STATE means that the goal can be 
-     * cast to a single GoalState object.
-     *
-     * Discuss with Dr. Alterovitz.
-     */
-    if (goalType != GOAL_STATE )
-        return false;
-    
-    State * end_state = pdef_->getGoal()->as<GoalState>()->getState();
-    for (int i = 0; i < dimensions_ ; i++)
-        target_config_[i] = end_state->as<RealVectorStateSpace::StateType>()
-                                                              ->operator[](i);
-                                                               
-    /*
-    //LOG : print target_config values
-    std::cout<< "Target Config : "<< std::endl;    
-    for (int i = 0; i< dimensions_; i++)
-        std::cout <<  target_config_[i] << " ";
-    std::cout << std::endl;       
-    //LOG : end
-    */                                                  
-    
-    /* get the max and min bounds */
-
-    RealVectorBounds rb = stateSpace_->as<RealVectorStateSpace>()->getBounds();
-    std::vector<double> lowerBound = rb.low;
-    std::vector<double> upperBound = rb.high;
-    
-    for (unsigned int i=0; i<lowerBound.size(); i++){
-        min_config_[i] = lowerBound.at(i);
-    }
-    
-    for (unsigned int i=0; i<upperBound.size(); i++){
-        max_config_[i] = upperBound.at(i);
-
-    }
-    
-    /*
-    //LOG : print min and max bounds
-    std::cout<< "Min Config : "<< std::endl;    
-    for (int i = 0; i< dimensions_; i++)
-        std::cout <<  min_config_[i] << " ";
-    std::cout << std::endl;       
-    std::cout<< "Max Config : "<< std::endl;    
-    for (int i = 0; i< dimensions_; i++)
-        std::cout <<  max_config_[i] << " ";
-    std::cout << std::endl;   
-    //LOG : end
-    */     
-
-    prrtsSystem_->dimensions   = dimensions_;
-    prrtsSystem_->init         = init_config_;
-    prrtsSystem_->min          = min_config_;
-    prrtsSystem_->max          = max_config_;
-    prrtsSystem_->target       = target_config_;
-    prrtsSystem_->space_config = this;
-    
-    /* system_data_alloc_func is not being used in our implementation
-     * instead have introduces a new void* data member in the prrts_system_t
-     * to directly pass the pRRTstar object.
-     */
-    prrtsSystem_->system_data_alloc_func = NULL ;
-    prrtsSystem_->system_data_free_func  = NULL;
-     
-    prrtsSystem_->dist_func    = pRRTstar::prrts_dist_func;
-    prrtsSystem_->in_goal_func = pRRTstar::prrts_in_goal;
-    prrtsSystem_->clear_func   = pRRTstar::prrts_clear_func;
-    prrtsSystem_->link_func    = pRRTstar::prrts_link_func;
-    
-    return true;
-
-}
-
-void ompl::geometric::pRRTstar::setupPrrtsOptions ()
-{
-    memset(&options_, 0, sizeof(options_));
-    options_.gamma             = ballRadiusConst_;
-    options_.regional_sampling = regionalSampling_;
-    options_.samples_per_step  = samplesPerStep_;
-
-}
 
 bool ompl::geometric::pRRTstar::isValid(const double *config)
 {
@@ -394,11 +267,8 @@ double ompl::geometric::pRRTstar::distanceFunction(const double *config1
     stateSpace_->copyFromReals(state1, real1);
     stateSpace_->copyFromReals(state2, real2);
   
-    //si_->printState(state1);
-    //si_->printState(state2);
-    
     double distance =   si_->distance(state1, state2);
-    //std::cout<<"Distance : " << distance <<std::endl;
+    std::cout<<"Distance : " << distance <<std::endl;
     stateSpace_->freeState(state1);
     stateSpace_->freeState(state2);
     
@@ -435,35 +305,6 @@ int ompl::geometric::pRRTstar::get_num_procs()
 #endif
 }  
 
-bool ompl::geometric::pRRTstar::addPathToSolution()
-{
-    if (solution_ != NULL){
-        /* construct the solution path */
-        
-        ompl::geometric::PathGeometric *path 
-                              = new ompl::geometric::PathGeometric(si_);
-        path->append(pdef_->getStartState(0));
-        for (unsigned int j=1 ; j < solution_->path_length ; ++j){
-            std::vector<double> real;    
-            for (int i = 0; i < dimensions_; i++){
-                real.push_back(solution_->configs[j][i]);
-            }
-            ompl::base::State *state = stateSpace_->allocState();
-            stateSpace_->copyFromReals(state, real);
-            path->append(state);
-        }
-    /**\todo - Does prrts have the notion of approximate solutions ?
-     * Does/can the planner return multiple solutions? How can they be 
-     * stored?
-     */
-        pdef_->addSolutionPath(base::PathPtr(path));
-        return true;
-    }
-    else{
-        return false;
-    }
-}
-
 /** \brief Check if the PlannerTerminationCondition.operator()
  *   is true.
  */
@@ -477,25 +318,6 @@ bool ompl::geometric::pRRTstar::checkPlannerTermCond()
 /* private static functions. These are used to set the prrts_system_t
    environment */
 
-bool ompl::geometric::pRRTstar::prrts_clear_func(void * usrPtr
-                                               , const double *config)
-{
-    return static_cast<pRRTstar*>(usrPtr)->isValid(config);
-}
-
-bool ompl::geometric::pRRTstar::prrts_link_func (void * usrPtr
-                                               , const double *config1
-                                               , const double *config2)
-{
-    return static_cast<pRRTstar*>(usrPtr)->checkMotion(config1, config2);
-}    
-
-bool ompl::geometric::pRRTstar::prrts_in_goal (void * usrPtr
-                                             , const double *config)
-{
-    return static_cast<pRRTstar*>(usrPtr)->isSatisfied(config);
-}
-
 double ompl::geometric::pRRTstar::prrts_dist_func(void * usrPtr
                                                 , const double *config1
                                                 , const double *config2) 
@@ -503,15 +325,291 @@ double ompl::geometric::pRRTstar::prrts_dist_func(void * usrPtr
     return static_cast<pRRTstar*>(usrPtr)->distanceFunction(config1,config2);
 }   
 
+/*****************************************************************************
+functions realted to the setting up the multi threaded system.
+*****************************************************************************/
 
-/** \brief Check if the PlannerTerminationCondition is satisfied  
- */
- 
-bool ompl::geometric::pRRTstar::ompl_planner_term_cond(void * usrPtr)
-{   
-    return static_cast<pRRTstar*>(usrPtr)->checkPlannerTermCond();
+bool ompl::geometric::pRRTstar::setupPrimitives()
+{
+     using namespace ompl::base;
+    /**\todo - Adding a check to ensure the supplied state is a RealVectorSpace
+     * for the present the underlying datastructure kdtree used by the
+     * prrts implementation cannot handle unbounded revolute joins.
+     *
+     * Syed Hassan added a patch to fix that. Needs to be integreted.
+     */
+    int spaceType  = stateSpace_->getType();
+    if (spaceType != STATE_SPACE_REAL_VECTOR)
+        return false;
+        
+    initConfig_   = new double[dimensions_];
+    targetConfig_ = new double[dimensions_];
+    maxConfig_    = new double[dimensions_];
+    minConfig_    = new double[dimensions_];
+    
+    /* get start states */
+    State * st_state = pdef_->getStartState(0);
+    for (int i = 0; i < dimensions_ ; i++)
+        initConfig_[i] = st_state->as<RealVectorStateSpace::StateType>()
+                                                               ->operator[](i);
+    
+    /* get the target states */
+    int goalType = pdef_->getGoal()->getType();	
+    
+    /**\todo - Adding a check to ensure that the goal has only a single goal
+     * state. Not sure if prrts can handle goal with multiple states. Or a 
+     * goal samplable region. type GOAL_STATE means that the goal can be 
+     * cast to a single GoalState object.
+     *
+     * Discuss with Dr. Alterovitz.
+     */
+    if (goalType != GOAL_STATE )
+        return false;
+    
+    State * end_state = pdef_->getGoal()->as<GoalState>()->getState();
+    for (int i = 0; i < dimensions_ ; i++)
+        targetConfig_[i] = end_state->as<RealVectorStateSpace::StateType>()
+                                                              ->operator[](i);
+                                                               
+    /* get the max and min bounds */
+
+    RealVectorBounds rb = stateSpace_->as<RealVectorStateSpace>()->getBounds();
+    std::vector<double> lowerBound = rb.low;
+    std::vector<double> upperBound = rb.high;
+    
+    for (unsigned int i=0; i<lowerBound.size(); i++){
+        minConfig_[i] = lowerBound.at(i);
+    }
+    
+    for (unsigned int i=0; i<upperBound.size(); i++){
+        maxConfig_[i] = upperBound.at(i);
+
+    }
+    
+    return true;
 }
-                                                                                                                    
+
+/**
+ *
+ *
+ */
+bool ompl::geometric::pRRTstar::setupThreadedSystem()
+{
+    std::cout<<"Start setting up threaded system ....." << std::endl;
+    Motion *rootMotion  = new Motion();    
+    Node *rootNode      = new Node(stateSpace_, pdef_->getStartState(0));
+    
+    rootMotion->node_   = rootNode;
+    rootNode->motion_   = rootMotion; 
+    rootNode->inGoal_   = false;
+    
+    /* Create the Kd_Tree  */
+    kd_tree_t *kdTree;
+    if(setupPrimitives()) {
+    
+        kdTree = kd_create_tree(
+                             dimensions_
+                           , minConfig_
+                           , maxConfig_
+                           , pRRTstar::prrts_dist_func
+                           , rootNode->getConfig()
+                           , rootNode
+                           , this); 
+    }
+    else {                           
+        return false; 
+    }                     
+                     
+    /** \brief An instance of a Runtime object is shared by each Worker 
+     *  thread. It contains the shared configuration and communication 
+     *  fields for the workers.
+     */
+    Runtime *runtime = new Runtime(kdTree, rootNode, numOfThreads_
+                                  , samplesPerStep_);
+    
+    /* Create the Worker objects */
+    workers_ = new Worker[numOfThreads_];
+    
+    for (int i = 0; i< numOfThreads_; i++){
+        workers_[i].runtime_  = runtime;
+        workers_[i].system_   = this;
+        workers_[i].workerid_ = i;
+        workers_[i].rng_      = new RNG();
+        
+        std::cout<< "Worker - "<< workers_[i].workerid_<< " created"
+                                                       << std::endl;
+       
+    }
+
+    return true;
+}
+
+/**
+ *
+ *
+ */
+void ompl::geometric::pRRTstar::startWorkers(Worker *workers
+                                           , int threadCount)
+{
+#ifdef _OPENMP
+    int i;
+
+#pragma omp parallel for num_threads(threadCount) schedule(static,1) private(i)
+    for (i=0 ; i<threadCount ; ++i) {
+        worker_main(&workers[i]);
+    }
+
+    /*
+     * that's all for the open mp version.  the parallel pragma
+     * includes memory barriers
+     */
+
+#else /* _OPENMP */
+
+    int i;
+    pthread_attr_t pthread_attr;
+    int error;
+#if defined(SET_CPU_AFFINITY) && defined(__linux__)
+    int num_cpus = get_num_procs();
+    int cpu;
+    cpu_set_t cpu_set;
+#endif
+
+    pthread_attr_init(&pthread_attr);
+
+#if defined(SET_CPU_AFFINITY) && defined(__linux__)
+    cpu = 0; /* sched_getcpu() */
+    /* printf("cpu = %d, size=%d\n", cpu, (int)sizeof(cpu_set_t)); */
+
+    CPU_ZERO(&cpu_set);
+
+    /* tell the scheduler to keep this thread on its current cpu */
+    CPU_SET(cpu, &cpu_set);
+    if ((error = pthread_setaffinity_np(pthread_self()
+               , sizeof(cpu_set_t), &cpu_set)) != 0)
+        //OMPL_WARN("failed to set thread 0 affinity to %d", (int)cpu);
+    CPU_CLR(cpu, &cpu_set);
+#endif
+
+    /*
+     * a write barrier here is probably not needed since
+     * pthread_create likely takes care of it.  But this is done
+     * once, so the overhead does not matter.
+     */
+    smp_write_barrier();
+
+    /*
+     * Start the threads, worker[0] is run on the calling thread,
+     * the rest get their own new threads.
+     */
+     
+    for (i=1 ; i<threadCount ; ++i) {
+    
+#if defined(SET_CPU_AFFINITY) && defined(__linux__)
+        cpu = (cpu + (num_cpus/2) + 1) % num_cpus;
+        CPU_SET(cpu, &cpu_set);
+        /* printf("worker %u scheduled on %d\n", i
+                , (int)((cpu + i) % num_cpus)); */
+        if ((error = pthread_attr_setaffinity_np(&pthread_attr
+                                               , sizeof(cpu_set_t)
+                                               , &cpu_set)) != 0) {
+           // OMPL_WARN("failed to set thread %u affinity to %d", i, (int)cpu);
+        }
+#endif
+
+        if ((error = pthread_create(&workers[i].threadID_
+                                  , &pthread_attr
+                                  , worker_main
+                                  , &workers[i])) != 0){
+                                 
+          //  OMPL_WARN("thread create failed on worker %u", i);
+        }
+
+#if defined(SET_CPU_AFFINITY) && defined(__linux__)
+        CPU_CLR(cpu, &cpu_set);
+#endif
+    }
+    
+    pthread_attr_destroy(&pthread_attr);
+
+    /* run worker 0 on the calling thread */
+    worker_main(&workers[0]);
+    
+    /*
+     * After worker[0] completes, join the rest of the workers
+     */
+    for (i=1 ; i<threadCount ; ++i) {
+        error = pthread_join(workers[i].threadID_, NULL);
+        if (error != 0){
+            //OMPL_WARN("join failed on worker %u", i);
+        }
+    }
+    
+    /*
+     * this is probably not necessary since pthread_join likely
+     * performs the memory synchronization, but again, done
+     * once.
+     */
+    smp_read_barrier_depends();    
+
+#endif /* _PTHREAD */
+
+}
+
+void * ompl::geometric::pRRTstar::worker_main(void *arg)
+{
+    Worker *worker              = (Worker*)arg;
+    bool is_main_thread         = (worker->workerid_ == 0);
+    std::cout << "Worker_Main called by Worker " << worker->workerid_
+                                                 << std::endl;
+    
+    while (!worker->runtime_->done_) {
+    
+        std::cout<< "Worker Thread # "<<worker->threadID_ <<std::endl;        
+        if (is_main_thread &&  worker->system_->checkPlannerTermCond()) {
+            __sync_bool_compare_and_swap(&worker->runtime_->done_, false, true);
+        }
+        
+    }
+   
+    return NULL;
+}
+
+
+/*****************************************************************************
+ * Defining the functions in the Node class. 
+ *****************************************************************************/
 
 
 
+void ompl::geometric::pRRTstar::Node::setConfig(const double *config)
+{
+    std::vector<double> real ;
+    for (unsigned int i = 0; i < stateSpace_->getDimension(); ++i) {
+         real.push_back(config[i]);
+    }
+    
+    stateSpace_->copyFromReals(state_, real);
+}                                    
+
+inline
+double * ompl::geometric::pRRTstar::Node::getConfig() const
+{
+    double * config = new double[stateSpace_->getDimension()];
+    std::vector<double> real;  
+    
+    stateSpace_->copyToReals(real,state_);
+      
+    for (unsigned int i = 0; i < real.size(); i++){
+        config[i] = real[i];
+    }
+    
+    return config;
+}
+
+void ompl::geometric::pRRTstar::Node::setMotion(Motion *motion)
+{
+    this->motion_ = motion;
+
+}
+                

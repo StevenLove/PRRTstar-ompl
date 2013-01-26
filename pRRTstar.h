@@ -34,8 +34,8 @@
 
 /* Authors:  Diptorup Deb*/
 
-#ifndef OMPL_CONTRIB_RRT_STAR_PPRRTstar_
-#define OMPL_CONTRIB_RRT_STAR_PPRRTstar_
+#ifndef OMPL_CONTRIB_RRT_STAR_PPRRTSTAR_
+#define OMPL_CONTRIB_RRT_STAR_PPRRTSTAR_
 
 #include "ompl/geometric/planners/PlannerIncludes.h"
 #include "ompl/datastructures/NearestNeighbors.h"
@@ -49,17 +49,15 @@ extern "C"{
 }
 namespace ompl
 {
-
     namespace geometric
     {
-
         /**
-          @anchor gPRRTstar
+          @anchor gpRRTstar
           @par Short description
-          \ref gPRRTstar "PRRT*" (parallel RRT*) is a parallel implementation 
+          \ref gpRRTstar "PRRT*" (parallel RRT*) is a parallel implementation 
           Of the asymptotically-optimal incremental sampling-based RRT*
           algorithm. 
-          \ref gPRRTstar "PRRT*" algorithm is able to achieve super-liner
+          \ref gpRRTstar "PRRT*" algorithm is able to achieve super-liner
           speed ups on multi-core architectures, using three key features:
           <ol>
           <li> lock-free parallelism using atomic operations to
@@ -80,13 +78,13 @@ namespace ompl
          */
         
         /** \brief Parallel and Optimal Rapidly-exploring Random Trees */
-        class PRRTstar : public base::Planner
+        class pRRTstar : public base::Planner
         {
         public:
 
-            PRRTstar(const base::SpaceInformationPtr &si);
+            pRRTstar(const base::SpaceInformationPtr &si);
 
-            virtual ~PRRTstar(void);
+            virtual ~pRRTstar(void);
 
             virtual void getPlannerData(base::PlannerData &data) const;
 

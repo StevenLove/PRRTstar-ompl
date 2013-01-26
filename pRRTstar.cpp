@@ -34,7 +34,7 @@
 
 /* Authors: Diptorup Deb */
 
-#include "PRRTstar.h"
+#include "pRRTstar.h"
 #include "ompl/base/goals/GoalSampleableRegion.h"
 #include "ompl/base/goals/GoalState.h"
 #include "ompl/datastructures/NearestNeighborsGNAT.h"
@@ -53,8 +53,8 @@ extern "C"{
 #include <assert.h>
 #include <vector>
 
-ompl::geometric::PRRTstar::PRRTstar(const base::SpaceInformationPtr &si) 
-    : base::Planner(si, "PRRTstar")
+ompl::geometric::pRRTstar::pRRTstar(const base::SpaceInformationPtr &si) 
+    : base::Planner(si, "pRRTstar")
 {
     /**\todo - Does prrts have notion of approximate solutions
            - What are the Goal Types prrts can handle (for that matter rrts)
@@ -77,29 +77,29 @@ ompl::geometric::PRRTstar::PRRTstar(const base::SpaceInformationPtr &si)
     samplesPerStep_        = 1;
     numOfThreads_          = get_num_procs();
     Planner::declareParam<double>("ball_radius_constant", this
-                                 , &PRRTstar::setBallRadiusConstant
-                                 , &PRRTstar::getBallRadiusConstant);  
+                                 , &pRRTstar::setBallRadiusConstant
+                                 , &pRRTstar::getBallRadiusConstant);  
 
     Planner::declareParam<bool>("regional_sampling", this
-                                 , &PRRTstar::setRegionalSampling
-                                 , &PRRTstar::getRegionalSampling);  
+                                 , &pRRTstar::setRegionalSampling
+                                 , &pRRTstar::getRegionalSampling);  
                                  
     Planner::declareParam<int>("samples_per_step", this
-                                 , &PRRTstar::setSamplesPerStep
-                                 , &PRRTstar::getSamplesPerStep);       
+                                 , &pRRTstar::setSamplesPerStep
+                                 , &pRRTstar::getSamplesPerStep);       
     
     Planner::declareParam<int>("num_of_threads", this
-                                 , &PRRTstar::setNumOfThreads
-                                 , &PRRTstar::getNumOfThreads);       
+                                 , &pRRTstar::setNumOfThreads
+                                 , &pRRTstar::getNumOfThreads);       
                                                              
 }
 
-ompl::geometric::PRRTstar::~PRRTstar(void)
+ompl::geometric::pRRTstar::~pRRTstar(void)
 {
     freeMemory();
 }
 
-void ompl::geometric::PRRTstar::setup(void)
+void ompl::geometric::pRRTstar::setup(void)
 {   
     /*
     tools::SelfConfig sc(si_, getName());
@@ -113,14 +113,14 @@ void ompl::geometric::PRRTstar::setup(void)
 
 }
 
-void ompl::geometric::PRRTstar::clear(void)
+void ompl::geometric::pRRTstar::clear(void)
 {
     Planner::clear();
     sampler_.reset();
     //freeMemory();
 }
 
-ompl::base::PlannerStatus ompl::geometric::PRRTstar::solveForSamples(
+ompl::base::PlannerStatus ompl::geometric::pRRTstar::solveForSamples(
                                                             size_t sampleCount)
 {
     checkValidity();
@@ -149,7 +149,7 @@ ompl::base::PlannerStatus ompl::geometric::PRRTstar::solveForSamples(
 }
 
 
-ompl::base::PlannerStatus ompl::geometric::PRRTstar::solve(
+ompl::base::PlannerStatus ompl::geometric::pRRTstar::solve(
                                  const base::PlannerTerminationCondition &ptc)
 {
     checkValidity();
@@ -166,7 +166,7 @@ ompl::base::PlannerStatus ompl::geometric::PRRTstar::solve(
         return base::PlannerStatus::INVALID_START;
     }
     ptc_ = ptc;
-    prrtsSystem_->term_cond = PRRTstar::ompl_planner_term_cond;
+    prrtsSystem_->term_cond = pRRTstar::ompl_planner_term_cond;
     
     solution_ = prrts_run_indefinitely(prrtsSystem_, &options_, numOfThreads_);
     
@@ -179,7 +179,7 @@ ompl::base::PlannerStatus ompl::geometric::PRRTstar::solve(
 }
 
 
-void ompl::geometric::PRRTstar::freeMemory(void)
+void ompl::geometric::pRRTstar::freeMemory(void)
 {
     free(prrtsSystem_);
     delete[] init_config_;
@@ -188,7 +188,7 @@ void ompl::geometric::PRRTstar::freeMemory(void)
     delete[] min_config_;
 }
 
-void ompl::geometric::PRRTstar::getPlannerData(base::PlannerData &data) const
+void ompl::geometric::pRRTstar::getPlannerData(base::PlannerData &data) const
 {
     /*init_config
     Planner::getPlannerData(data);
@@ -200,7 +200,7 @@ void ompl::geometric::PRRTstar::getPlannerData(base::PlannerData &data) const
 
 /* Private helper functions */
 
-bool ompl::geometric::PRRTstar::setupPrrtsSystem()
+bool ompl::geometric::pRRTstar::setupPrrtsSystem()
 {
     /* Allocate memory for the prrts_system_t */
     if ((prrtsSystem_ = struct_alloc(prrts_system_t)) == NULL)
@@ -300,21 +300,21 @@ bool ompl::geometric::PRRTstar::setupPrrtsSystem()
     
     /* system_data_alloc_func is not being used in our implementation
      * instead have introduces a new void* data member in the prrts_system_t
-     * to directly pass the PRRTstar object.
+     * to directly pass the pRRTstar object.
      */
     prrtsSystem_->system_data_alloc_func = NULL ;
     prrtsSystem_->system_data_free_func  = NULL;
      
-    prrtsSystem_->dist_func    = PRRTstar::prrts_dist_func;
-    prrtsSystem_->in_goal_func = PRRTstar::prrts_in_goal;
-    prrtsSystem_->clear_func   = PRRTstar::prrts_clear_func;
-    prrtsSystem_->link_func    = PRRTstar::prrts_link_func;
+    prrtsSystem_->dist_func    = pRRTstar::prrts_dist_func;
+    prrtsSystem_->in_goal_func = pRRTstar::prrts_in_goal;
+    prrtsSystem_->clear_func   = pRRTstar::prrts_clear_func;
+    prrtsSystem_->link_func    = pRRTstar::prrts_link_func;
     
     return true;
 
 }
 
-void ompl::geometric::PRRTstar::setupPrrtsOptions ()
+void ompl::geometric::pRRTstar::setupPrrtsOptions ()
 {
     memset(&options_, 0, sizeof(options_));
     options_.gamma             = ballRadiusConst_;
@@ -323,7 +323,7 @@ void ompl::geometric::PRRTstar::setupPrrtsOptions ()
 
 }
 
-bool ompl::geometric::PRRTstar::isValid(const double *config)
+bool ompl::geometric::pRRTstar::isValid(const double *config)
 {
     std::vector<double> real;    
     for (int i = 0; i < dimensions_; i++){
@@ -341,7 +341,7 @@ bool ompl::geometric::PRRTstar::isValid(const double *config)
     return clear;
 }
 
-bool ompl::geometric::PRRTstar::checkMotion (const double *config1
+bool ompl::geometric::pRRTstar::checkMotion (const double *config1
                                            , const double *config2)
 {
     std::vector<double> real1, real2;    
@@ -363,7 +363,7 @@ bool ompl::geometric::PRRTstar::checkMotion (const double *config1
     return validMotion;
 }
 
-bool ompl::geometric::PRRTstar::isSatisfied (const double *config)
+bool ompl::geometric::pRRTstar::isSatisfied (const double *config)
 {
     std::vector<double> real;    
     for (int i = 0; i < dimensions_; i++){
@@ -379,7 +379,7 @@ bool ompl::geometric::PRRTstar::isSatisfied (const double *config)
     return inGoal;
 }
 
-double ompl::geometric::PRRTstar::distanceFunction(const double *config1
+double ompl::geometric::pRRTstar::distanceFunction(const double *config1
                                                  , const double *config2) 
 {
     std::vector<double>  real1, real2; 
@@ -405,7 +405,7 @@ double ompl::geometric::PRRTstar::distanceFunction(const double *config1
     return distance;
 }     
 
-int ompl::geometric::PRRTstar::get_num_procs()
+int ompl::geometric::pRRTstar::get_num_procs()
 {
 #ifdef __linux__
     return sysconf(_SC_NPROCESSORS_ONLN);
@@ -435,7 +435,7 @@ int ompl::geometric::PRRTstar::get_num_procs()
 #endif
 }  
 
-bool ompl::geometric::PRRTstar::addPathToSolution()
+bool ompl::geometric::pRRTstar::addPathToSolution()
 {
     if (solution_ != NULL){
         /* construct the solution path */
@@ -467,7 +467,7 @@ bool ompl::geometric::PRRTstar::addPathToSolution()
 /** \brief Check if the PlannerTerminationCondition.operator()
  *   is true.
  */
-bool ompl::geometric::PRRTstar::checkPlannerTermCond()
+bool ompl::geometric::pRRTstar::checkPlannerTermCond()
 {
     return ptc_();
 }
@@ -477,39 +477,39 @@ bool ompl::geometric::PRRTstar::checkPlannerTermCond()
 /* private static functions. These are used to set the prrts_system_t
    environment */
 
-bool ompl::geometric::PRRTstar::prrts_clear_func(void * usrPtr
+bool ompl::geometric::pRRTstar::prrts_clear_func(void * usrPtr
                                                , const double *config)
 {
-    return static_cast<PRRTstar*>(usrPtr)->isValid(config);
+    return static_cast<pRRTstar*>(usrPtr)->isValid(config);
 }
 
-bool ompl::geometric::PRRTstar::prrts_link_func (void * usrPtr
+bool ompl::geometric::pRRTstar::prrts_link_func (void * usrPtr
                                                , const double *config1
                                                , const double *config2)
 {
-    return static_cast<PRRTstar*>(usrPtr)->checkMotion(config1, config2);
+    return static_cast<pRRTstar*>(usrPtr)->checkMotion(config1, config2);
 }    
 
-bool ompl::geometric::PRRTstar::prrts_in_goal (void * usrPtr
+bool ompl::geometric::pRRTstar::prrts_in_goal (void * usrPtr
                                              , const double *config)
 {
-    return static_cast<PRRTstar*>(usrPtr)->isSatisfied(config);
+    return static_cast<pRRTstar*>(usrPtr)->isSatisfied(config);
 }
 
-double ompl::geometric::PRRTstar::prrts_dist_func(void * usrPtr
+double ompl::geometric::pRRTstar::prrts_dist_func(void * usrPtr
                                                 , const double *config1
                                                 , const double *config2) 
 {
-    return static_cast<PRRTstar*>(usrPtr)->distanceFunction(config1,config2);
+    return static_cast<pRRTstar*>(usrPtr)->distanceFunction(config1,config2);
 }   
 
 
 /** \brief Check if the PlannerTerminationCondition is satisfied  
  */
  
-bool ompl::geometric::PRRTstar::ompl_planner_term_cond(void * usrPtr)
+bool ompl::geometric::pRRTstar::ompl_planner_term_cond(void * usrPtr)
 {   
-    return static_cast<PRRTstar*>(usrPtr)->checkPlannerTermCond();
+    return static_cast<pRRTstar*>(usrPtr)->checkPlannerTermCond();
 }
                                                                                                                     
 

@@ -34,12 +34,12 @@
 
 /* Author: Ioan Sucan */
 
-#include <ompl/base/SpaceInformation.h>
-#include <ompl/base/spaces/SE3StateSpace.h>
-#include "PRRTstar.h"
-#include <ompl/geometric/SimpleSetup.h>
+#include "ompl/base/SpaceInformation.h"
+#include "ompl/base/spaces/SE3StateSpace.h"
+#include "pRRTstar.h"
+#include "ompl/geometric/SimpleSetup.h"
 
-#include <ompl/config.h>
+#include "ompl/config.h"
 #include <iostream>
 
 namespace ob = ompl::base;
@@ -97,7 +97,7 @@ void plan(void)
 
     // create a planner for the defined space
     //ob::PlannerPtr planner(new og::RRTstar(si));
-      ob::PlannerPtr planner(new og::PRRTstar(si));
+      ob::PlannerPtr planner(new og::pRRTstar(si));
     // set the problem we are trying to solve for the planner
     planner->setProblemDefinition(pdef);
 

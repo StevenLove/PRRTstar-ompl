@@ -7,7 +7,7 @@ INCLUDE_DIR_OMPL_11.1 = $(OMPL_HOME)/ompl-0.11.1/include
 LIB_DIR_OMPL_11.1     = $(OMPL_HOME)/ompl-0.11.1/lib
 INCLUDE_DIR_OMPL_12.1 = $(OMPL_HOME)/ompl-0.12.1/include
 LIB_DIR_OMPL_12.1     = $(OMPL_HOME)/ompl-0.12.1/lib
-OBJS                  = alloc.o kdtree.o mt19937a.o hrtimer.o prrts.o stats.o pRRTstar.o RigidBodyPlanning.o 
+OBJS                  = alloc.o kdtree.o pRRTstar.o RigidBodyPlanning.o 
 LIBS                  = -lpthread -lrt -lompl 
 CC                    = g++
 CFLAGS                = -c -Wall -Wextra -ansi -g 
@@ -31,7 +31,7 @@ alloc.o   :
 kdtree.o  : alloc.o
 	$(CC) $(CFLAGS) $(KDTREE_SRC)/kdtree.c -o $@ -I$(KDTREE_ROOT)
 
-pRRTstar.o: checkOMPLversion kdtree.o prrts.o
+pRRTstar.o: checkOMPLversion kdtree.o 
 	$(CC) $(CFLAGS) pRRTstar.cpp -o $@ -I$(INCLUDE_DIR)
 	
 RigidBodyPlanning.o: pRRTstar.o

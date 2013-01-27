@@ -491,6 +491,8 @@ namespace ompl
             
             static void printLog( std::string logString);
             
+            static int nearListCompare(const void *a, const void *b);        
+            
             /******************************************************************
              * Functions needed by the pRRT* execution                        *
              *****************************************************************/
@@ -502,10 +504,28 @@ namespace ompl
              */
             static void workerNearCallback(void *workerArg, int no
                                            , void *nearNode, double dist);
+
+            void steer(size_t dimensions, double *newConfig
+                     , const double *targetConfig, double scale);                                           
                                            
             bool canLink(Worker *worker, const double *a
                         , const double *b, double motionCost);
+                        
+            Node * createNode( double *config, bool inGoal, double linkCost
+                             , Motion *parentMotion);   
 
+                             
+            Motion * createMotion(Node *node, double motionCost
+                                , Motion *parent); 
+
+            void addChildMotion(Motion *parent, Motion *child);                                 
+                                
+            void updateBestPath(Worker *worker, Motion *motion
+                                                , double radius);          
+
+            void rewire(Worker *worker, Motion *oldMotion, double motionCost
+                                      , Node *newParent, double radius); 
+                                                  
             bool is_link_expired(Motion *motion);
             
             void update_children(Worker *worker, Motion *newParent
@@ -516,33 +536,11 @@ namespace ompl
             
             bool remove_child(Motion *parent , Motion *child);
             
-            void steer(size_t dimensions, double *newConfig
-                     , const double *targetConfig, double scale);
-                            
-            Node * create_node(pRRTstar *prrts_system, double *config
-                             , bool inGoal, double linkCost
-                             , Motion *parentMotion);     
-
             Motion * set_node_link(Worker *worker
                                  , Node *node
                                  , Motion *oldMotion
                                  , double motionCost
                                  , Motion *parentMotion);                             
-                             
-            Motion * create_link(Node *node
-                               , double linkCost
-                               , Motion *parent);   
-                               
-            void add_child_link(Motion *parent, Motion *child);       
-            
-            void update_best_path(Worker *worker, Motion *motion
-                                                , double radius);    
-
-            static int near_list_compare(const void *a, const void *b); 
-            
-            void rewire(Worker *worker, Motion *oldMotion, double motionCost
-                                      , Node *newParent, double radius);
-
          };
     }
 }

@@ -545,7 +545,7 @@ bool ompl::geometric::pRRTstar::workerStep(Worker *worker, int stepNo)
     unsigned nearMotionSize;
     Node *nearest;
     Node *newNode;
-    Motion *link;
+    Motion *motion;
     unsigned i, j;
     double *newConfig = worker->newConfig_;
 
@@ -606,22 +606,100 @@ bool ompl::geometric::pRRTstar::workerStep(Worker *worker, int stepNo)
          * near nodes to rewire, no children node to update,
          * so we can return immediately
          */
-/*
-        new_node = create_node(
-            worker,
-            new_config,
-            system->dimensions,
-            system->target == NULL && (system->in_goal_func)(worker->system_data, new_config),
-            dist,
-            nearest->link);
 
-        update_best_path(worker, new_node->link, radius);
+        newNode = system->createNode(
+                       newConfig
+                     , system->targetConfig_ == NULL 
+                                            && system->isSatisfied(newConfig)
+                     , dist
+                     , nearest->motion_);
 
-        kd_insert(worker->runtime->kd_tree, new_node->config, new_node);
-*/        
+        system->updateBestPath(worker, newNode->motion_, radius);
+
+        kd_insert(worker->runtime_->kdTree_, newNode->getConfig(), newNode);
+      
         return true;
     }
     
+    /*
+     * At this point the near_list array is populated, and the
+     * next step is to sort by their path distances in ascending
+     * order, to reduce the number of calls to link that follow.
+     */
+
+    qsort(worker->nearMotion_, nearMotionSize, sizeof(near_motion_t)
+                                                           , nearListCompare);
+
+    for (i=0 ; i<nearMotionSize ; ++i) {
+        motion = worker->nearMotion_[i].motion_;
+
+        if (system->canLink(worker, motion->node_->getConfig(), newConfig
+                          , worker->nearMotion_[i].motionCost_)) {
+            /*
+             * We've found a near node that the new
+             * configuration can link to.  We're
+             * guaranteed at this point that we're linking
+             * to the shortest reachable path because of
+             * the previous sort.  (Caveat that another
+             * what another thread might do to the nodes
+             * after this one)
+             */
+            newNode = system->createNode(
+                                newConfig
+                              , system->targetConfig_ == NULL 
+                                            && system->isSatisfied(newConfig)
+                              , worker->nearMotion_[i].motionCost_
+                              , motion);
+
+            system->updateBestPath(worker, newNode->motion_, radius);
+
+            /*
+             * insert into the kd-tree.  After the
+             * kd-insert, other threads might modify the
+             * new_node's path.
+             */
+            kd_insert(worker->runtime_->kdTree_, newNode->getConfig()
+                                                                 , newNode);
+
+            /**\todo: reference release on near_list[i]->link */
+            
+            /*
+             * Now we rewire the remaining nodes in the
+             * near list through this the new_node if the
+             * resulting path would be shorter.
+             *
+             * Iteration is done in reverse order (from
+             * most distant to closest), to reduce the
+             * likelihood of a node getting updated twice
+             * (or more) during the rewiring.  E.g. if
+             * node A is rewired through new_node, and
+             * node B goes through A, it will be
+             * recursively rewired.  If B also appears in
+             * the near list, then B would be rewired
+             * again.
+             */
+            /* 
+            for (j=near_list_size ; --j > i ; ) {
+                rewire(worker,
+                       worker->near_list[j].link,
+                       worker->near_list[j].link_cost,
+                       new_node,
+                       radius);
+            
+                /**\todo: reference release on near_list[j].link */
+            //}
+            
+            return true;
+        }
+
+        /**\todo: reference release on near_list[j].link */
+    }
+
+    /*
+     * At this point, we've iterated through every near node and
+     * found nothing that links.  We return false indicating no
+     * new samples were added.
+     */
     return false;
 }
 
@@ -702,7 +780,145 @@ bool ompl::geometric::pRRTstar::canLink(Worker *worker, const double *a
     bool r = worker->system_->checkMotion(a, b);
 
     return r;   
-}                                      
+} 
+
+/**
+ *
+ *
+ */
+ompl::geometric::pRRTstar::Node * ompl::geometric::pRRTstar::createNode(
+                                                       double *config
+                                                     , bool inGoal
+                                                     , double motionCost
+                                                     , Motion *parentMotion)
+{
+    Node *newNode = new Node(stateSpace_, inGoal);
+    newNode->setConfig(config);
+
+    Motion *motion = createMotion(newNode, motionCost, parentMotion);
+
+     /*
+      * The new node and link will not be visible to other threads
+      * until we call add_child_link.
+      */
+    newNode->motion_ = motion;
+
+    smp_write_barrier();
+
+    addChildMotion(parentMotion, motion);
+
+    return newNode;
+}  
+
+/**
+ *
+ *
+ */
+ompl::geometric::pRRTstar::Motion * ompl::geometric::pRRTstar::createMotion(
+                             Node *node, double motionCost, Motion *parent)
+{
+    assert(motionCost > 0);
+    Motion *newMotion = new Motion(node, parent, motionCost);   
+    newMotion->pathCost_ = motionCost + parent->pathCost_;
+
+    return newMotion;
+}                                                                                        
+
+/**
+ *
+ *
+ */ 
+void ompl::geometric::pRRTstar::addChildMotion(Motion *parent, Motion *child)
+{
+    Motion *expected = NULL;
+    Motion *nextSibling;
+
+    do {
+        nextSibling = parent->firstChild_;
+
+        /*
+         * We could use:
+         *
+         * __sync_set(&child->next_sibling, next_sibling); 
+         *
+         * but using __sync_bool_compare_and_swap allows us to
+         * test our assumption that this is the only thread
+         * adding the child.  It also allows us to use a
+         * builtin atomic.
+         */
+        if (!__sync_bool_compare_and_swap(&child->nextSibling_
+                                        , expected, nextSibling)) {
+            assert(false);
+        }
+        expected = nextSibling;
+
+    } while (!__sync_bool_compare_and_swap(&parent->firstChild_
+                                          , nextSibling, child));
+}
+
+/**
+ *
+ *
+ */
+void ompl::geometric::pRRTstar::updateBestPath(Worker *worker, Motion *motion
+                                                , double radius)
+{
+    Node *node;
+    double motionDistToGoal;
+    Motion *bestPath;
+    double bestDist;
+    double distToTarget;
+
+    node = motion->node_;
+
+    if (node->inGoal_) {
+        motionDistToGoal = motion->pathCost_;
+    } 
+    else if (targetConfig_ != NULL) {
+        /* goal-biased search */
+        distToTarget = distanceFunction(node->getConfig(), targetConfig_);
+        if (distToTarget > radius ||
+            !canLink(worker, node->getConfig(), targetConfig_, distToTarget))
+            return;
+        motionDistToGoal = motion->pathCost_ + distToTarget;
+    } 
+    else {
+        return;
+    }
+
+    do {
+        bestPath = worker->runtime_->bestPath_;
+
+        if (bestPath != NULL) {
+            bestDist = bestPath->pathCost_;
+
+            if (!bestPath->node_->inGoal_) {
+                /*
+                 * if the current best is not in goal
+                 * itself, it must have a link to a
+                 * target goal configuration
+                 */
+                bestDist += distanceFunction(bestPath->node_->getConfig()
+                                                             , targetConfig_);
+
+                /**\todo: the dist_func is called for
+                 * every update, might be worth
+                 * caching */
+            }
+
+            if (motionDistToGoal >= bestDist) {
+                return;
+            }
+        }
+    } while (!__sync_bool_compare_and_swap(&worker->runtime_->bestPath_
+                                                          , bestPath, motion));
+
+#if 0
+    printf("New best path found, dist=%f\n", link_dist_to_goal);
+#endif
+
+}                                                     
+                                             
 /******************************************************************************
  * Utility Functions                                                          *
  *****************************************************************************/
@@ -774,11 +990,22 @@ void ompl::geometric::pRRTstar::randomSample(Worker *worker, double *config)
  *
  *
  */
- 
 void ompl::geometric::pRRTstar::printLog( std::string logString)
 {
     std::cout << logString << std::endl;
 } 
+
+/**
+ *
+ *
+ */
+int ompl::geometric::pRRTstar::nearListCompare(const void *a, const void *b)
+{
+    double a_cost = ((near_motion_t*)a)->pathCost_;
+    double b_cost = ((near_motion_t*)b)->pathCost_;
+
+    return (a_cost < b_cost ? -1 : (a_cost > b_cost ? 1 : 0));
+}  
 
 
 /*****************************************************************************

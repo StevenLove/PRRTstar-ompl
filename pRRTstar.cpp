@@ -204,8 +204,12 @@ bool ompl::geometric::pRRTstar::checkMotion (const double *config1
     stateSpace_->copyFromReals(state2, real2);
     
     bool validMotion =  si_->checkMotion(state1, state2);
+    
     if(!validMotion)
         printLog("Motion not valid");
+    else
+        printLog("Motion is valid");
+        
     stateSpace_->freeState(state1);
     stateSpace_->freeState(state2);
     
@@ -678,16 +682,16 @@ bool ompl::geometric::pRRTstar::workerStep(Worker *worker, int stepNo)
              * the near list, then B would be rewired
              * again.
              */
-            /* 
-            for (j=near_list_size ; --j > i ; ) {
-                rewire(worker,
-                       worker->near_list[j].link,
-                       worker->near_list[j].link_cost,
-                       new_node,
+            
+            for (j=nearMotionSize ; --j > i ; ) {
+                system->rewire(worker,
+                       worker->nearMotion_[j].motion_,
+                       worker->nearMotion_[j].motionCost_,
+                       newNode,
                        radius);
             
                 /**\todo: reference release on near_list[j].link */
-            //}
+            }
             
             return true;
         }
@@ -917,7 +921,287 @@ void ompl::geometric::pRRTstar::updateBestPath(Worker *worker, Motion *motion
     printf("New best path found, dist=%f\n", link_dist_to_goal);
 #endif
 
-}                                                     
+}  
+
+/**
+ *
+ *
+ */
+ompl::geometric::pRRTstar::Motion * ompl::geometric::pRRTstar::setNodeMotion(
+                                   Node *node, Motion *oldMotion
+                                 , double motionCost, Motion *parentMotion)
+{
+    Motion *newMotion = createMotion(node, motionCost, parentMotion);
+
+    smp_write_barrier();
+
+    if (__sync_bool_compare_and_swap(&node->motion_, oldMotion, newMotion)) {
+    
+        assert(newMotion->pathCost_ <= oldMotion->pathCost_);
+        addChildMotion(parentMotion, newMotion);        
+        return newMotion;
+    } 
+    else {
+        return NULL;
+    }
+
+}      
+
+/**
+ *
+ *
+ */  
+bool ompl::geometric::pRRTstar::isMotionExpired(Motion *motion)
+{
+    Node *node = motion->node_;
+    
+    smp_read_barrier_depends();
+    
+    return node->motion_ != motion;
+}
+
+/**
+ *
+ *
+ */  
+ompl::geometric::pRRTstar::Motion * ompl::geometric::pRRTstar::removeFirstChild
+                                                               (Motion *parent)
+{
+    Motion *child;
+    Motion *sibling;
+
+    assert(isMotionExpired(parent));
+
+    do {
+        child = parent->firstChild_;
+        if (child == NULL) {
+            return NULL;
+        }
+        sibling = child->nextSibling_;
+    } while (!__sync_bool_compare_and_swap(&parent->firstChild_, child
+                                         , sibling));
+
+    if (!__sync_bool_compare_and_swap(&child->nextSibling_, sibling, NULL))
+        assert(false);
+
+    return child;
+
+}                                                               
+
+/**
+ *
+ *
+ */                                 
+void ompl::geometric::pRRTstar::updateChildren(Worker *worker
+                                             , Motion *newParent
+                                             , Motion *oldParent
+                                             , double radius)
+{
+    Motion *oldChild;
+    Motion *newChild;
+    Node *node;
+    double pathCost;
+
+    assert(newParent->node_ == oldParent->node_);
+    assert(isMotionExpired(oldParent));
+    assert(newParent->pathCost_ <= oldParent->pathCost_);
+
+    for (;;) {
+        oldChild = removeFirstChild(oldParent);
+        
+        if (oldChild == NULL) {
+            if (isMotionExpired(newParent)) {
+                oldParent = newParent;
+                newParent = oldParent->node_->motion_;
+                continue;
+            }
+            return;
+        }
+
+        if (isMotionExpired(oldChild)) {
+        
+            assert(worker->runtime_->threadCount_ > 1);
+            continue;
+        }
+
+        pathCost = newParent->pathCost_ + oldChild->motionCost_;
+        node = oldChild->node_;
+
+        if (node->motion_->parent_->node_ != oldParent->node_) {
+            continue;
+        }
+
+        newChild = setNodeMotion(node, oldChild, oldChild->motionCost_
+                                               , newParent);
+        if (newChild != NULL) {
+
+            updateChildren(worker, newChild, oldChild, radius);
+            updateBestPath(worker, newChild, radius);
+        } 
+        else {
+
+            assert(worker->runtime_->threadCount_ > 1);
+            assert(node->motion_ != oldChild);
+        }
+    }
+}
+
+/**
+ *
+ *
+ */
+bool ompl::geometric::pRRTstar::removeChild(Motion *parent , Motion *child)
+{
+    Motion *sibling;
+    Motion *n;
+    Motion *p;
+
+    assert(isMotionExpired(child));
+    assert(child->parent_ == parent);
+
+    for (;;) {
+        n = parent->firstChild_;
+
+        if (n == child) {
+            /* the child is at the head of the list of children */
+
+            sibling = child->nextSibling_;
+            
+            if (__sync_bool_compare_and_swap(&parent->firstChild_, child
+                                           , sibling)) {
+                break;
+            } 
+            else {
+                continue;
+            }
+        }
+
+        if (n == NULL) {
+            return false;
+        }
+
+        for (;;) {
+            p = n;
+
+            n = n->nextSibling_;
+
+            if (n == NULL) {
+                /*
+                 * iterated through the entire list of
+                 * children and did not find the
+                 * child.  possibly another thread has
+                 * already removed it.
+                 */
+                return false;
+            }
+
+            if (n == child) {
+                /*
+                 * found it.  try to remove the child
+                 * by linking the previous node's
+                 * sibling to the nodes next sibling.
+                 */
+                sibling = child->nextSibling_;
+                if (__sync_bool_compare_and_swap(&p->nextSibling_, child
+                                               , sibling)) {
+                    goto done;
+                } 
+                else {
+                    break;
+                }
+            }
+        }
+    }
+
+done:
+    __sync_bool_compare_and_swap(&child->nextSibling_, sibling, NULL);
+
+    return true;
+}
+             
+/**
+ *
+ *
+ */
+void ompl::geometric::pRRTstar::rewire(Worker *worker, Motion *oldMotion
+                                      , double motionCost, Node *newParent
+                                      , double radius)
+{
+    Node *node;
+    Motion *parentMotion;
+    Motion *newMotion;
+    Motion *updatedOldMotion;
+    double pathCost;
+
+    assert(oldMotion->parent_ != NULL);
+    assert(oldMotion->parent_->node_ != newParent);
+
+    node = oldMotion->node_;
+    parentMotion = newParent->motion_;
+    pathCost = parentMotion->pathCost_ + motionCost;
+
+    /* check if rewiring would create a shorter path */
+    if (pathCost >= oldMotion->pathCost_)
+        return;
+    /* make sure rewiring is possible */
+    if (!canLink(worker, oldMotion->node_->getConfig()
+                       , newParent->getConfig(), motionCost))
+        return;
+
+    /*
+     * Rewire the node.  This loop continues to attempt atomic
+     * updates until either the update succeeds or the path_cost
+     * of the old_link is found to be better than what we are
+     * trying to put in.
+     */
+    do {
+        newMotion = setNodeMotion(node, oldMotion, motionCost, parentMotion);
+
+        if (newMotion != NULL) {
+            
+            updateChildren(worker, newMotion, oldMotion, radius);
+            updateBestPath(worker, newMotion, radius);
+            
+            if (isMotionExpired(parentMotion)) {
+                updateChildren(worker, parentMotion->node_->motion_
+                             , parentMotion, radius);
+            }
+            /*
+             * Setting the new_link expires the old_link
+             * but does not remove it from the parent.
+             * Here we just do a little clean up to remove
+             * the old_link.  This is placed after the
+             * parent expiration check because an expired
+             * parent will already take care of this
+             * issue, and the call below will be O(1)
+             * instead of O(n).
+             */
+            
+            if (!removeChild(oldMotion->parent_, oldMotion)) {
+                assert(worker->runtime_->threadCount_ > 1);
+            }
+            
+
+            return;
+        }
+
+        /*
+         * We shouldn't see a concurrent update on 1 thread,
+         * unless there is something wrong with the order in
+         * which rewire (see note in calling method)
+         */
+        assert(worker->runtime_->threadCount_ > 1);
+
+        updatedOldMotion = node->motion_;
+        assert(oldMotion != updatedOldMotion);
+
+        oldMotion = updatedOldMotion;
+
+        /* try again, no need to check/recalculated path cost
+         * or link */
+    } while (pathCost < oldMotion->pathCost_);
+   
+}                                                                                          
                                              
 /******************************************************************************
  * Utility Functions                                                          *

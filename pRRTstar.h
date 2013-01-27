@@ -525,22 +525,20 @@ namespace ompl
 
             void rewire(Worker *worker, Motion *oldMotion, double motionCost
                                       , Node *newParent, double radius); 
-                                                  
-            bool is_link_expired(Motion *motion);
+                                      
+            Motion * setNodeMotion(Node *node, Motion *oldMotion
+                                 , double motionCost, Motion *parentMotion); 
+                                 
+            void updateChildren(Worker *worker, Motion *newParent
+                               , Motion *oldParent, double radius);
+                                                                 
+            bool isMotionExpired(Motion *motion);
             
-            void update_children(Worker *worker, Motion *newParent
-                               , Motion *oldParent, double radius);                                      
+            Motion * removeFirstChild(Motion *parent);
             
-
-            Motion * remove_first_chld(Motion *parent);
+            bool removeChild(Motion *parent , Motion *child);
             
-            bool remove_child(Motion *parent , Motion *child);
-            
-            Motion * set_node_link(Worker *worker
-                                 , Node *node
-                                 , Motion *oldMotion
-                                 , double motionCost
-                                 , Motion *parentMotion);                             
+                          
          };
     }
 }

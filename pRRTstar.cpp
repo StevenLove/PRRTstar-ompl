@@ -433,10 +433,10 @@ bool ompl::geometric::pRRTstar::setupThreadedSystem()
     for (int i = 0; i< numOfThreads_; i++){
         workers_[i].runtime_  = runtime;
         workers_[i].system_   = this;
-        workers_[i].workerid_ = i;
+        workers_[i].workerID_ = i;
         workers_[i].rng_      = new RNG();
         
-        std::cout<< "Worker - "<< workers_[i].workerid_<< " created"
+        std::cout<< "Worker - "<< workers_[i].workerID_<< " created"
                                                        << std::endl;
        
     }
@@ -451,45 +451,11 @@ bool ompl::geometric::pRRTstar::setupThreadedSystem()
 void ompl::geometric::pRRTstar::startWorkers(Worker *workers
                                            , int threadCount)
 {
-#ifdef _OPENMP
-    int i;
-
-#pragma omp parallel for num_threads(threadCount) schedule(static,1) private(i)
-    for (i=0 ; i<threadCount ; ++i) {
-        worker_main(&workers[i]);
-    }
-
-    /*
-     * that's all for the open mp version.  the parallel pragma
-     * includes memory barriers
-     */
-
-#else /* _OPENMP */
-
     int i;
     pthread_attr_t pthread_attr;
     int error;
-#if defined(SET_CPU_AFFINITY) && defined(__linux__)
-    int num_cpus = get_num_procs();
-    int cpu;
-    cpu_set_t cpu_set;
-#endif
 
     pthread_attr_init(&pthread_attr);
-
-#if defined(SET_CPU_AFFINITY) && defined(__linux__)
-    cpu = 0; /* sched_getcpu() */
-    /* printf("cpu = %d, size=%d\n", cpu, (int)sizeof(cpu_set_t)); */
-
-    CPU_ZERO(&cpu_set);
-
-    /* tell the scheduler to keep this thread on its current cpu */
-    CPU_SET(cpu, &cpu_set);
-    if ((error = pthread_setaffinity_np(pthread_self()
-               , sizeof(cpu_set_t), &cpu_set)) != 0)
-        //OMPL_WARN("failed to set thread 0 affinity to %d", (int)cpu);
-    CPU_CLR(cpu, &cpu_set);
-#endif
 
     /*
      * a write barrier here is probably not needed since
@@ -504,36 +470,21 @@ void ompl::geometric::pRRTstar::startWorkers(Worker *workers
      */
      
     for (i=1 ; i<threadCount ; ++i) {
-    
-#if defined(SET_CPU_AFFINITY) && defined(__linux__)
-        cpu = (cpu + (num_cpus/2) + 1) % num_cpus;
-        CPU_SET(cpu, &cpu_set);
-        /* printf("worker %u scheduled on %d\n", i
-                , (int)((cpu + i) % num_cpus)); */
-        if ((error = pthread_attr_setaffinity_np(&pthread_attr
-                                               , sizeof(cpu_set_t)
-                                               , &cpu_set)) != 0) {
-           // OMPL_WARN("failed to set thread %u affinity to %d", i, (int)cpu);
-        }
-#endif
 
         if ((error = pthread_create(&workers[i].threadID_
                                   , &pthread_attr
-                                  , worker_main
+                                  , workerMain
                                   , &workers[i])) != 0){
                                  
           //  OMPL_WARN("thread create failed on worker %u", i);
         }
 
-#if defined(SET_CPU_AFFINITY) && defined(__linux__)
-        CPU_CLR(cpu, &cpu_set);
-#endif
     }
     
     pthread_attr_destroy(&pthread_attr);
 
     /* run worker 0 on the calling thread */
-    worker_main(&workers[0]);
+    workerMain(&workers[0]);
     
     /*
      * After worker[0] completes, join the rest of the workers
@@ -552,29 +503,83 @@ void ompl::geometric::pRRTstar::startWorkers(Worker *workers
      */
     smp_read_barrier_depends();    
 
-#endif /* _PTHREAD */
-
 }
 
-void * ompl::geometric::pRRTstar::worker_main(void *arg)
+void * ompl::geometric::pRRTstar::workerMain(void *arg)
 {
     Worker *worker              = (Worker*)arg;
-    bool is_main_thread         = (worker->workerid_ == 0);
-    std::cout << "Worker_Main called by Worker " << worker->workerid_
-                                                 << std::endl;
+    bool is_main_thread         = (worker->workerID_ == 0);
+    Runtime *runtime            = worker->runtime_;
+    pRRTstar *system            = worker->system_;
+    int dimensions              = system->dimensions_;
     
-    while (!worker->runtime_->done_) {
+
+    worker->nearMotion_         = (near_motion_t*)malloc(sizeof(near_motion_t) 
+                                                * INITIAL_NEAR_LIST_CAPACITY);
+                                                
+    //Equivalent of the create_worker_system function
     
-        std::cout<< "Worker Thread # "<<worker->threadID_ <<std::endl;        
-        if (is_main_thread &&  worker->system_->checkPlannerTermCond()) {
-            __sync_bool_compare_and_swap(&worker->runtime_->done_, false, true);
-        }
+    if (!system->regionalSampling_) {
+        worker->sampleMin_      = system->minConfig_;
+        worker->sampleMax_      = system->maxConfig_;
+    } 
+    else {
+        double *sampleMin       = (double*)array_copy(system->minConfig_
+                                                    , system->dimensions_);
+        double *sampleMax       = (double*)array_copy(system->maxConfig_
+                                                    , system->dimensions_);
+
+        double min = system->minConfig_[REGION_SPLIT_AXIS];
+        double t = (system->maxConfig_ [REGION_SPLIT_AXIS] - min) 
+                                             / runtime->threadCount_;
+        sampleMin[REGION_SPLIT_AXIS] = min + worker->workerID_ * t;
         
+        if (worker->workerID_+1 < runtime->threadCount_) {
+            sampleMax[REGION_SPLIT_AXIS] = min + (worker->workerID_+1) * t;
+        }
+
+        worker->sampleMin_      = sampleMin;
+        worker->sampleMax_      = sampleMax;
     }
-   
+                                                    
+    worker->nearMotionSize_     = 0;
+    worker->nearMotionCapacity_ = INITIAL_NEAR_LIST_CAPACITY;                                               
+    worker->sampleCount_        = 0;
+    worker->clearCount_         = 0;
+    worker->motionDistSum_      = 0.0;    
+    worker->newConfig_          = new double[dimensions];
+    
+    int stepNo                  = runtime->stepNo_;
+    
+    while (!runtime->done_) {
+    
+        worker->sampleCount_++;
+        
+        if (workerStep(worker, stepNo)) {
+            worker->clearCount_++;
+            /*
+             * Successfullly added a configuration, update
+             * the shared total step count
+             */
+            stepNo = __sync_fetch_and_add(&runtime->stepNo_, 1);
+        }
+
+        if (is_main_thread && system->checkPlannerTermCond()) {
+            /* __sync_set(&runtime->done, true); */
+            __sync_bool_compare_and_swap(&runtime->done_, false, true);
+        }
+    }
+    
+    /* issue a write barrier mostly for the thread-local stats */
+    smp_write_barrier();
+
     return NULL;
 }
 
+bool ompl::geometric::pRRTstar::workerStep(Worker *worker, int stepNo)
+{
+    return false;
+}
 
 /*****************************************************************************
  * Defining the functions in the Node class. 

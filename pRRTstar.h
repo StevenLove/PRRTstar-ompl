@@ -357,38 +357,35 @@ namespace ompl
                     ~Worker(void)
                     {
                         free(nearMotion_);
+                        free(newConfig_);
                     }
                     
                     friend class ompl::geometric::pRRTstar;
                     
                 private:
                 
-                    #ifdef _OPENMP
-                        int                            threadID_;
-                    #else
-                        pthread_t                      threadID_;
-                    #endif
-                    
+                    pthread_t                           threadID_;
+                   
                     ompl::geometric::pRRTstar::Runtime *runtime_;
-                    ompl::geometric::pRRTstar         *system_ ;     
+                    ompl::geometric::pRRTstar          *system_ ;     
                                    
-                    int                                workerid_;
-                    RNG                               *rng_;
+                    int                                 workerID_;
+                    RNG                                *rng_;
                     
                     /** \todo change the newConfig_ to be of base::State type 
                     */
-                    double                            *newConfig_;
+                    double                             *newConfig_;
                     
-                    near_motion_t                     *nearMotion_;
-                    size_t                             nearMotionSize_;
-                    size_t                             nearMotionCapacity_;
+                    near_motion_t                      *nearMotion_;
+                    size_t                              nearMotionSize_;
+                    size_t                              nearMotionCapacity_;
 
-                    const double                      *sampleMin_;
-                    const double                      *sampleMax_;
+                    const double                       *sampleMin_;
+                    const double                       *sampleMax_;
 
-                    long                               clearCount_;
-                    long                               sampleCount_;
-                    double                             motionDistSum_;
+                    long                                clearCount_;
+                    long                                sampleCount_;
+                    double                              motionDistSum_;
                    
             };
             
@@ -424,7 +421,7 @@ namespace ompl
             /* These functions are static since they need to be passed to the
              * pthread_create callback.
              */
-            static void * worker_main(void *arg);
+            static void * workerMain(void *arg);
             
             static bool workerStep(Worker *worker, int stepNo);
             
@@ -486,13 +483,9 @@ namespace ompl
             /******************************************************************
              * Utility Functions                                              *
              *****************************************************************/
-            
-            #ifdef _OPENMP
-            #define get_num_procs() omp_get_max_threads()
-            #else   
+
             int get_num_procs();
-            #endif
-            
+
             static void printConfig(double *config);       
             
             /******************************************************************

@@ -49,22 +49,6 @@
 #include <assert.h>
 #include <vector>
 
-/************************************************************************
-************************************************************************/
-
-void ompl::geometric::pRRTstar::printConfig(double *config) 
-{
-    std::cout<< "State Configuration : " ;
-    for (int i = 0 ; i < 2; ++i ) {
-       std::cout << config[i] <<", ";
-    }
-    std::cout<< std::endl;
-}
-
-
-/************************************************************************
-************************************************************************/
-
 ompl::geometric::pRRTstar::pRRTstar(const base::SpaceInformationPtr &si) 
     : base::Planner(si, "pRRTstar")
 {
@@ -120,20 +104,11 @@ void ompl::geometric::pRRTstar::setup(void)
     */
     
     Planner::setup();
-    
-    /*if (!setup_temp())
-        setup_ = false;
-     */
-        
-    //setupKdTree();    
-    //setupThreadedSystem();
-
 }
 
 void ompl::geometric::pRRTstar::clear(void)
 {
     Planner::clear();
-    //freeMemory();
 }
 
 ompl::base::PlannerStatus ompl::geometric::pRRTstar::solve(
@@ -229,7 +204,8 @@ bool ompl::geometric::pRRTstar::checkMotion (const double *config1
     stateSpace_->copyFromReals(state2, real2);
     
     bool validMotion =  si_->checkMotion(state1, state2);
-    
+    if(!validMotion)
+        printLog("Motion not valid");
     stateSpace_->freeState(state1);
     stateSpace_->freeState(state2);
     
@@ -275,36 +251,6 @@ double ompl::geometric::pRRTstar::distanceFunction(const double *config1
     return distance;
 }     
 
-int ompl::geometric::pRRTstar::get_num_procs()
-{
-#ifdef __linux__
-    return sysconf(_SC_NPROCESSORS_ONLN);
-#elif defined(BSD) || defined(__APPLE__)
-
-    int procs;
-    int mib[4];
-    size_t len = sizeof(procs);
-
-    mib[0] = CTL_HW;
-    mib[1] = HW_AVAILCPU;
-
-    sysctl(mib, 2, &procs, &len, NULL, 0);
-
-    if (procs < 1) {
-        mib[1] = HW_NCPU;
-        sysctl(mib, 2, &procs, &len, NULL, 0);
-
-        if (procs < 1)
-            procs = 1;
-    }
-
-    return procs;
-
-#else
-    return -1;
-#endif
-}  
-
 /** \brief Check if the PlannerTerminationCondition.operator()
  *   is true.
  */
@@ -325,10 +271,15 @@ double ompl::geometric::pRRTstar::prrts_dist_func(void * usrPtr
     return static_cast<pRRTstar*>(usrPtr)->distanceFunction(config1,config2);
 }   
 
-/*****************************************************************************
-functions realted to the setting up the multi threaded system.
-*****************************************************************************/
+/******************************************************************************
+ * Functions to setup the threaded system and the other                       *
+ * primitives needed by the pRRTstar implementation.                          *
+ *****************************************************************************/
 
+/**
+ *
+ *
+ */
 bool ompl::geometric::pRRTstar::setupPrimitives()
 {
      using namespace ompl::base;
@@ -505,6 +456,11 @@ void ompl::geometric::pRRTstar::startWorkers(Worker *workers
 
 }
 
+
+/**
+ *
+ *
+ */
 void * ompl::geometric::pRRTstar::workerMain(void *arg)
 {
     Worker *worker              = (Worker*)arg;
@@ -576,10 +532,254 @@ void * ompl::geometric::pRRTstar::workerMain(void *arg)
     return NULL;
 }
 
+
+/**
+ *
+ *
+ */
 bool ompl::geometric::pRRTstar::workerStep(Worker *worker, int stepNo)
 {
+    pRRTstar *system = worker->system_;
+    double radius;
+    double nearestDist, dist;
+    unsigned nearMotionSize;
+    Node *nearest;
+    Node *newNode;
+    Motion *link;
+    unsigned i, j;
+    double *newConfig = worker->newConfig_;
+
+    system->randomSample(worker, newConfig);
+    
+    printConfig(newConfig);
+        
+    if (!system->isValid(newConfig)) {
+        printLog("Sampled state is not valid (in collision maybe)");
+        return false;
+    }    
+    
+    radius = worker->system_->ballRadiusConst_ *
+                pow(log((double)stepNo + 1.0) / (double)(stepNo + 1.0),
+                         1.0 / (double)system->dimensions_);
+
+    assert(radius > 0.0);
+    
+    worker->nearMotionSize_ = 0;
+    
+    nearMotionSize = kd_near(worker->runtime_->kdTree_, newConfig, radius
+                           , workerNearCallback, worker);
+
+    assert(nearMotionSize == worker->nearMotionSize_);
+    
+    if (nearMotionSize == 0) {
+    
+        printLog("Nothing in vicinity, steering towards nearest");
+        /*
+         * nothing found in the vicinity, try steering towards
+         * the nearest
+         */
+
+        nearest = (Node*)kd_nearest(worker->runtime_->kdTree_, newConfig
+                                                             , &nearestDist);
+        assert(radius <= nearestDist);
+
+        system->steer(system->dimensions_, newConfig, nearest->getConfig()
+                                                    , radius / nearestDist);
+        /**\todo - Why is this check needed again? redundant ? */    
+        if (!system->isValid(newConfig)) {
+            printLog("Sampled state is not valid (in collision maybe)");
+            return false;
+        }    
+
+        dist = system->distanceFunction(newConfig, nearest->getConfig());
+        std::cout << "Nearest distance - " << dist << std::endl;       
+        assert(dist <= nearestDist);
+
+        if (!system->canLink(worker, newConfig, nearest->getConfig(), dist)) {
+            printLog("Could not link to nearest");
+            return false;
+        }    
+        printLog("Link to the nearest node and add a node to the kd_tree");
+        /*
+         * The new configuration has a link.  Create a new
+         * node and insert it into the kd-tree.  There are no
+         * near nodes to rewire, no children node to update,
+         * so we can return immediately
+         */
+/*
+        new_node = create_node(
+            worker,
+            new_config,
+            system->dimensions,
+            system->target == NULL && (system->in_goal_func)(worker->system_data, new_config),
+            dist,
+            nearest->link);
+
+        update_best_path(worker, new_node->link, radius);
+
+        kd_insert(worker->runtime->kd_tree, new_node->config, new_node);
+*/        
+        return true;
+    }
+    
     return false;
 }
+
+
+/******************************************************************************
+ * Functions needed by the pRRT* execution                                    *
+ *****************************************************************************/
+            
+/** \brief Callback function which is passed to the kd_tree to 
+ *  build the near-list (Worker.nearMotion_) data structure 
+ *  during a call to kd_near.
+ * 
+ */
+void ompl::geometric::pRRTstar::workerNearCallback(void *workerArg
+                                                 , int no
+                                                 , void *nearNode
+                                                 , double dist)
+{
+
+    Worker *worker = (Worker*)workerArg;
+    Motion *nearMotion;
+
+    assert(no == (int)worker->nearMotionSize_);
+    assert(no <= (int)worker->nearMotionCapacity_);
+
+    /* check if we need to grow the array */
+    if (no == (int)worker->nearMotionCapacity_) {
+        if ((worker->nearMotion_ 
+               = (near_motion_t*)realloc(
+                                     worker->nearMotion_
+                                   , sizeof(near_motion_t) * 2 * no)) == NULL
+                                        ) {
+            /*OMPL_ERROR(1, "failed to reallocate cost nodes 
+                            (requested %lu bytes)"
+                 , (unsigned long)(sizeof(near_list_t) * 2 * no));
+             */
+                 
+         }
+        
+		worker->nearMotionCapacity_ = 2 * no;
+    }
+
+    nearMotion = ((Node*)nearNode)->motion_;
+
+    /**\todo: reference acquire on near_link */
+
+    worker->nearMotion_[no].motion_     = nearMotion;
+    worker->nearMotion_[no].motionCost_ = dist;
+    worker->nearMotion_[no].pathCost_   = nearMotion->pathCost_ + dist;
+
+    worker->nearMotionSize_++;
+} 
+
+/**
+ *
+ * \todo: steer makes some assumptions, it's implementation should be
+ * left to the system 
+ */
+void ompl::geometric::pRRTstar::steer(size_t dimensions, double *newConfig
+                     , const double *targetConfig, double scale)
+{                    
+    unsigned i;
+
+    for (i=0 ; i<dimensions ; ++i) {
+        newConfig[i] = targetConfig[i] + (newConfig[i] - targetConfig[i]) 
+                                                                    * scale;
+    }
+}                                                
+
+/**
+ *
+ *
+ */
+bool ompl::geometric::pRRTstar::canLink(Worker *worker, const double *a
+                                      , const double *b, double motionCost)
+{
+    worker->motionDistSum_ += motionCost;
+    bool r = worker->system_->checkMotion(a, b);
+
+    return r;   
+}                                      
+/******************************************************************************
+ * Utility Functions                                                          *
+ *****************************************************************************/
+
+/**
+ *
+ *
+ */
+void ompl::geometric::pRRTstar::printConfig(double *config) 
+{
+    std::cout<< "State Configuration : " ;
+    for (int i = 0 ; i < 2; ++i ) {
+       std::cout << config[i] <<", ";
+    }
+    std::cout<< std::endl;
+}
+
+/**
+ *
+ *
+ */
+int ompl::geometric::pRRTstar::get_num_procs()
+{
+#ifdef __linux__
+    return sysconf(_SC_NPROCESSORS_ONLN);
+#elif defined(BSD) || defined(__APPLE__)
+
+    int procs;
+    int mib[4];
+    size_t len = sizeof(procs);
+
+    mib[0] = CTL_HW;
+    mib[1] = HW_AVAILCPU;
+
+    sysctl(mib, 2, &procs, &len, NULL, 0);
+
+    if (procs < 1) {
+        mib[1] = HW_NCPU;
+        sysctl(mib, 2, &procs, &len, NULL, 0);
+
+        if (procs < 1)
+            procs = 1;
+    }
+
+    return procs;
+
+#else
+    return -1;
+#endif
+}  
+
+
+/**
+ *
+ *
+ */
+void ompl::geometric::pRRTstar::randomSample(Worker *worker, double *config)
+{
+    int dimensions = worker->system_->dimensions_;
+    for (int i=dimensions ; --i>=0 ; ) {
+        config[i] = worker->rng_->uniformReal(worker->system_->minConfig_[i]
+                                            , worker->system_->maxConfig_[i]);
+
+    }
+}
+
+
+/**
+ *
+ *
+ */
+ 
+void ompl::geometric::pRRTstar::printLog( std::string logString)
+{
+    std::cout << logString << std::endl;
+} 
+
 
 /*****************************************************************************
  * Defining the functions in the Node class. 

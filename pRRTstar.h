@@ -321,7 +321,7 @@ namespace ompl
 
                     kd_tree_t *kdTree_;
                     ompl::geometric::pRRTstar::Node *root_;
-                    size_t threadCount_;
+                    int threadCount_;
                     size_t samplePerStep_;
                     
                     /*
@@ -409,19 +409,18 @@ namespace ompl
             
             /******************************************************************
              * Functions to setup the threaded system and the other           *
-             * primitives                                                     *
+             * primitives needed by the pRRTstar implementation.              *
              *****************************************************************/
+            bool setupPrimitives();
             
             bool setupThreadedSystem();
-            
-            bool setupPrimitives();
             
             void startWorkers(Worker *workers, int threadCount);
             
             /* These functions are static since they need to be passed to the
              * pthread_create callback.
              */
-            static void * workerMain(void *arg);
+            static void* workerMain(void *arg);
             
             static bool workerStep(Worker *worker, int stepNo);
             
@@ -486,7 +485,11 @@ namespace ompl
 
             int get_num_procs();
 
-            static void printConfig(double *config);       
+            static void printConfig(double *config);    
+            
+            void randomSample(Worker *worker, double *config);
+            
+            static void printLog( std::string logString);
             
             /******************************************************************
              * Functions needed by the pRRT* execution                        *
@@ -497,10 +500,10 @@ namespace ompl
              *  during a call to kd_near.
              * 
              */
-            static void worker_near_callback(void *workerArg, int no
+            static void workerNearCallback(void *workerArg, int no
                                            , void *nearNode, double dist);
                                            
-            bool can_link(Worker *worker, const double *a
+            bool canLink(Worker *worker, const double *a
                         , const double *b, double motionCost);
 
             bool is_link_expired(Motion *motion);

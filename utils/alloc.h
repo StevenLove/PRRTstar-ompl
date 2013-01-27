@@ -1,3 +1,7 @@
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #ifndef ALLOC_H
 #define ALLOC_H
 
@@ -40,3 +44,7 @@ void tl_free(tl_mempool_t *pool, void *ptr);
 void *memdup(const void *source, size_t bytes);
 
 #endif /* ALLOC_H */
+
+#ifdef __cplusplus
+}
+#endif

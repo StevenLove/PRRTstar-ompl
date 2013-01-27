@@ -1,3 +1,6 @@
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 #ifndef KD_TREE_H
 #define KD_TREE_H
@@ -39,4 +42,8 @@ void *kd_nearest(kd_tree_t *t, const double *target, double *dist);
 int kd_near(kd_tree_t *t, const double *target, double radius
           , kd_near_callback callback, void *cb_data);
 
+#endif
+
+#ifdef __cplusplus
+}
 #endif

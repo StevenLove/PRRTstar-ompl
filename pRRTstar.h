@@ -404,6 +404,12 @@ namespace ompl
               *        best path for the RRT*
               */   
             Worker                                    *workers_;
+            
+            /** \brief An instance of a Runtime object is shared by each Worker 
+             *  thread. It contains the shared configuration and communication 
+             *  fields for the workers.
+             */
+            Runtime                                   *runtime_;
            
             // private functions
             
@@ -485,13 +491,15 @@ namespace ompl
 
             int get_num_procs();
 
-            static void printConfig(double *config);    
+            static void printConfig(const double *config, int size);    
             
             void randomSample(Worker *worker, double *config);
             
             static void printLog( std::string logString);
             
-            static int nearListCompare(const void *a, const void *b);        
+            static int nearListCompare(const void *a, const void *b);     
+            
+            void getWorkerData();   
             
             /******************************************************************
              * Functions needed by the pRRT* execution                        *

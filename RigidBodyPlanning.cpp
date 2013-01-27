@@ -45,6 +45,7 @@
 
 #include "ompl/config.h"
 #include <iostream>
+#include <fstream>
 #include <vector>
 
 #define RAD(x)  ((x) * (M_PI / 180.0))
@@ -231,7 +232,15 @@ void planWithPRRTS(ob::SpaceInformationPtr si, ob::ProblemDefinitionPtr pdef)
     
     // solve with the planner
     std::cout<< "Call solve now ......."<< std::endl;
-    planner->solve(1.0);
+    planner->solve(5.0);
+    
+    ob::PlannerData data(si);
+    planner->getPlannerData(data);
+    
+    //std::ofstream dotFile;
+    //dotFile.open ("path.dot");
+    //data.printGraphML (std::cout);
+    //dotFile.close();
   
 }
 

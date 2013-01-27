@@ -138,6 +138,8 @@ ompl::base::PlannerStatus ompl::geometric::pRRTstar::solve(
     std::cout << "Start workers now ........." << std::endl;
     startWorkers(workers_, numOfThreads_);
     
+    getWorkerData();
+    
     
     
     //solution_ = prrts_run_indefinitely(prrtsSystem_, &options_, numOfThreads_);
@@ -161,12 +163,23 @@ void ompl::geometric::pRRTstar::freeMemory(void)
 
 void ompl::geometric::pRRTstar::getPlannerData(base::PlannerData &data) const
 {
-    /*initConfig_
-    Planner::getPlannerData(data); */
+    Planner::getPlannerData(data);    
     
-    /**\todo Expose the kd_tree_data structure used by the prrts planner.
-     * so that it can be used to populate the Graph in the PlannerData.
-     */
+    Motion *ptr;
+    std::vector<Motion*> motions;
+    
+    if (runtime_->bestPath_) {
+        for(ptr = runtime_->bestPath_; ptr != NULL; ptr = ptr->parent_) {
+            motions.push_back(ptr);
+        }
+    }
+        
+    for (unsigned int i = 0 ; i < motions.size() ; ++i)
+        data.addEdge (base::PlannerDataVertex (motions[i]->parent_ ? 
+                                    motions[i]->parent_->node_->state_ : NULL),
+                      base::PlannerDataVertex (motions[i]->node_->state_));
+                      
+                         
 }
 
 /* Private helper functions */
@@ -375,18 +388,15 @@ bool ompl::geometric::pRRTstar::setupThreadedSystem()
         return false; 
     }                     
                      
-    /** \brief An instance of a Runtime object is shared by each Worker 
-     *  thread. It contains the shared configuration and communication 
-     *  fields for the workers.
-     */
-    Runtime *runtime = new Runtime(kdTree, rootNode, numOfThreads_
+
+    runtime_ = new Runtime(kdTree, rootNode, numOfThreads_
                                   , samplesPerStep_);
     
     /* Create the Worker objects */
     workers_ = new Worker[numOfThreads_];
     
     for (int i = 0; i< numOfThreads_; i++){
-        workers_[i].runtime_  = runtime;
+        workers_[i].runtime_  = runtime_;
         workers_[i].system_   = this;
         workers_[i].workerID_ = i;
         workers_[i].rng_      = new RNG();
@@ -555,7 +565,7 @@ bool ompl::geometric::pRRTstar::workerStep(Worker *worker, int stepNo)
 
     system->randomSample(worker, newConfig);
     
-    printConfig(newConfig);
+    printConfig(newConfig, worker->system_->dimensions_);
         
     if (!system->isValid(newConfig)) {
         printLog("Sampled state is not valid (in collision maybe)");
@@ -706,7 +716,6 @@ bool ompl::geometric::pRRTstar::workerStep(Worker *worker, int stepNo)
      */
     return false;
 }
-
 
 /******************************************************************************
  * Functions needed by the pRRT* execution                                    *
@@ -1211,11 +1220,14 @@ void ompl::geometric::pRRTstar::rewire(Worker *worker, Motion *oldMotion
  *
  *
  */
-void ompl::geometric::pRRTstar::printConfig(double *config) 
+void ompl::geometric::pRRTstar::printConfig(const double *config, int size) 
 {
+
     std::cout<< "State Configuration : " ;
-    for (int i = 0 ; i < 2; ++i ) {
-       std::cout << config[i] <<", ";
+    for (int i = 0 ; i < size; ++i ) {
+       std::cout << config[i] ;
+       if (i < size- 1)
+          std::cout<<", ";
     }
     std::cout<< std::endl;
 }
@@ -1291,6 +1303,49 @@ int ompl::geometric::pRRTstar::nearListCompare(const void *a, const void *b)
     return (a_cost < b_cost ? -1 : (a_cost > b_cost ? 1 : 0));
 }  
 
+/**
+ *
+ *
+ */
+void ompl::geometric::pRRTstar::getWorkerData()
+{
+    long sampleCount;
+    for(int i = 0; i < numOfThreads_;++i) {
+        sampleCount += workers_[i].sampleCount_;
+    }
+    printf("\nNumber of threads used: %d\n", numOfThreads_);
+    printf("Number of states sampled: %ld\n",sampleCount);
+    printLog("\nRoot Node :");
+    printConfig(initConfig_, dimensions_);
+    printLog("Best Path :");
+    
+    Motion *path = runtime_->bestPath_;
+    int n = 0;
+    Motion *ptr;
+
+    if (path == NULL) {
+        printLog("No Path found ??");
+        return;
+    }
+    
+    /*
+     * if there is a target configuration, we include it in the
+     * solution
+     */
+    if (targetConfig_ != NULL) {
+        printConfig(targetConfig_,dimensions_);
+        n++;
+    }   
+     
+    for ( ptr = path ; ptr != NULL ; ptr = ptr->parent_ ) {
+        printConfig(ptr->node_->getConfig(),dimensions_);
+        n++;
+    }
+       
+    printf("Best Path Length: %d\n",n);
+    printf("Best Path Cost: %f\n",path->pathCost_);    
+
+}
 
 /*****************************************************************************
  * Defining the functions in the Node class. 

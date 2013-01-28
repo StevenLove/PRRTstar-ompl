@@ -337,6 +337,7 @@ namespace ompl
                      */
                                       
                     ompl::geometric::pRRTstar::Motion * volatile bestPath_;
+
             };
             
            
@@ -499,7 +500,7 @@ namespace ompl
             
             static int nearListCompare(const void *a, const void *b);     
             
-            void getWorkerData();   
+            void getSolution();   
             
             /******************************************************************
              * Functions needed by the pRRT* execution                        *

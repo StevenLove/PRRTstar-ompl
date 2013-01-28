@@ -93,37 +93,40 @@ ompl::geometric::pRRTstar::pRRTstar(const base::SpaceInformationPtr &si)
 ompl::geometric::pRRTstar::~pRRTstar(void)
 {
     freeMemory();
-    //std::cout << "Destroying pRRTstar object" << cout::endl;
 }
 
 void ompl::geometric::pRRTstar::setup(void)
 {   
-    /*
-    tools::SelfConfig sc(si_, getName());
-    sc.configurePlannerRange(maxDistance_);
-    */
-    
     Planner::setup();
+    printLog("Setting up the multi-threaded system.");
+    
+    if(!setupThreadedSystem()){
+        setup_ = false;;
+    }   
+    
+    printLog("Multi-threaded system setup.");
+    
 }
 
 void ompl::geometric::pRRTstar::clear(void)
 {
     Planner::clear();
+    freeMemory();
+    setup_ = false;
 }
 
 ompl::base::PlannerStatus ompl::geometric::pRRTstar::solve(
                                  const base::PlannerTerminationCondition &ptc)
 {   
     checkValidity();
-    ptc_ = ptc;
-    
-    printLog("Setting up the multi-threaded system.");
-    if(!setupThreadedSystem()){
-        return base::PlannerStatus::UNKNOWN;
-    }   
-    
-    printLog("Multi-threaded system setup.");
-    
+    ptc_ = ptc;  
+      
+    if(!setup_) {
+        //OMPL_WARN ("Planner configurations not setup or were cleared. Calling \
+                    setup now.");
+        setup();          
+    }    
+        
     if (targetConfig_ ==NULL){
         //OMPL_ERROR("Goal undefined");
         return base::PlannerStatus::INVALID_GOAL;
@@ -138,8 +141,8 @@ ompl::base::PlannerStatus ompl::geometric::pRRTstar::solve(
     
     startWorkers(workers_, numOfThreads_);
     
-    if(runtime_->bestPath) {
-        getWorkerData();
+    if(runtime_->bestPath_) {
+        getSolution();
         return base::PlannerStatus::EXACT_SOLUTION;
     }
     else {
@@ -153,11 +156,17 @@ void ompl::geometric::pRRTstar::freeMemory(void)
     delete[] targetConfig_;
     delete[] maxConfig_;
     delete[] minConfig_;
-    delete[] workers_;    
+    delete[] workers_; 
+    delete runtime_;   
 }
 
 void ompl::geometric::pRRTstar::getPlannerData(base::PlannerData &data) const
-{
+{ 
+    /** \todo needs to be reworked. Have to expose the kd_node_t struct and 
+         then recurse it to populate the planner data. What I have done right
+         now just maps the best solution path. Instead we need to map the whole
+         kd_tree built during planner exec.
+      */
     Planner::getPlannerData(data);    
     
     Motion *ptr;
@@ -213,11 +222,12 @@ bool ompl::geometric::pRRTstar::checkMotion (const double *config1
     
     bool validMotion =  si_->checkMotion(state1, state2);
     
+#if 0    
     if(!validMotion)
         printLog("Motion not valid");
     else
         printLog("Motion is valid");
-        
+#endif        
     stateSpace_->freeState(state1);
     stateSpace_->freeState(state2);
     
@@ -256,7 +266,9 @@ double ompl::geometric::pRRTstar::distanceFunction(const double *config1
     stateSpace_->copyFromReals(state2, real2);
   
     double distance =   si_->distance(state1, state2);
+#if 0    
     std::cout<<"Distance : " << distance <<std::endl;
+#endif    
     stateSpace_->freeState(state1);
     stateSpace_->freeState(state2);
     
@@ -590,6 +602,14 @@ bool ompl::geometric::pRRTstar::workerStep(Worker *worker, int stepNo)
 
         nearest = (Node*)kd_nearest(worker->runtime_->kdTree_, newConfig
                                                              , &nearestDist);
+        /** FIXME : This assertion fails once in a while, it should not fail.
+                    Maybe a race condition ? The radius value is set by one 
+                    thread but the distance by another thread.
+                    
+            FIXME : Also this call to nearest is not leading to 
+                    anything. The checkmotion fails always, when 
+                    called here. Need to find out why.
+         */                                                                                 
         assert(radius <= nearestDist);
 
         system->steer(system->dimensions_, newConfig, nearest->getConfig()
@@ -1302,9 +1322,11 @@ int ompl::geometric::pRRTstar::nearListCompare(const void *a, const void *b)
  *
  *
  */
-void ompl::geometric::pRRTstar::getWorkerData()
+void ompl::geometric::pRRTstar::getSolution()
 {
     long sampleCount;
+    ompl::geometric::PathGeometric *solutionPath 
+                              = new ompl::geometric::PathGeometric(si_);
     for(int i = 0; i < numOfThreads_;++i) {
         sampleCount += workers_[i].sampleCount_;
     }
@@ -1334,12 +1356,15 @@ void ompl::geometric::pRRTstar::getWorkerData()
      
     for ( ptr = path ; ptr != NULL ; ptr = ptr->parent_ ) {
         printConfig(ptr->node_->getConfig(),dimensions_);
+        solutionPath->append(ptr->node_->state_);
         n++;
     }
-       
+    
     printf("Best Path Length: %d\n",n);
-    printf("Best Path Cost: %f\n",path->pathCost_);    
-
+    printf("Best Path Cost: %f\n",path->pathCost_);
+    
+    pdef_->addSolutionPath(base::PathPtr(solutionPath));
+    
 }
 
 /*****************************************************************************

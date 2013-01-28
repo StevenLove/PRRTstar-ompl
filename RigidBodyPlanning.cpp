@@ -232,7 +232,7 @@ void planWithPRRTS(ob::SpaceInformationPtr si, ob::ProblemDefinitionPtr pdef)
     
     // solve with the planner
     std::cout<< "Call solve now ......."<< std::endl;
-    planner->solve(5.0);
+    planner->solve(2.0);
     
     ob::PlannerData data(si);
     planner->getPlannerData(data);
@@ -319,7 +319,7 @@ int main(int, char **)
     
     std::cout << "Testing with pRRT* : " <<  std::endl;
 	
-	planWithpRRTS(si,pdef); 
+	planWithPRRTS(si,pdef); 
 	
     std::cout << std::endl << std::endl;
     std::cout << "Testing with pRRT* completed: " <<  std::endl;  

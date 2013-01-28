@@ -114,42 +114,37 @@ void ompl::geometric::pRRTstar::clear(void)
 ompl::base::PlannerStatus ompl::geometric::pRRTstar::solve(
                                  const base::PlannerTerminationCondition &ptc)
 {   
-    std::cout<< "############# Executing Solve now ###############"<<std::endl;
     checkValidity();
     ptc_ = ptc;
     
-    std::cout << "Setting up threaded system now ........" << std::endl;
+    printLog("Setting up the multi-threaded system.");
     if(!setupThreadedSystem()){
         return base::PlannerStatus::UNKNOWN;
     }   
     
-    std::cout << "Threaded system setup ........." << std::endl;
+    printLog("Multi-threaded system setup.");
     
     if (targetConfig_ ==NULL){
         //OMPL_ERROR("Goal undefined");
         return base::PlannerStatus::INVALID_GOAL;
     }
     if (initConfig_ ==NULL){
-        //logError("There are no valid initial states!");
+        //OMPL_ERROR("There are no valid initial states!");
         return base::PlannerStatus::INVALID_START;
     }
 
     /* Start separate threads for each Worker object to execute */
-    std::cout << "Start workers now ........." << std::endl;
+    printLog("Starting the workers threads now.");
+    
     startWorkers(workers_, numOfThreads_);
     
-    getWorkerData();
-    
-    
-    
-    //solution_ = prrts_run_indefinitely(prrtsSystem_, &options_, numOfThreads_);
-    
-    if (true){
+    if(runtime_->bestPath) {
+        getWorkerData();
         return base::PlannerStatus::EXACT_SOLUTION;
     }
-    else{
+    else {
         return base::PlannerStatus::TIMEOUT;
-    }
+    }  
 }
 
 void ompl::geometric::pRRTstar::freeMemory(void)

@@ -244,6 +244,37 @@ void planWithPRRTS(ob::SpaceInformationPtr si, ob::ProblemDefinitionPtr pdef)
   
 }
 
+void planWithRRTS(ob::SpaceInformationPtr si, ob::ProblemDefinitionPtr pdef)
+{
+    // create a planner for the defined space
+    ob::PlannerPtr planner(new og::RRTstar(si));
+    
+    // set the problem we are trying to solve for the planner
+    planner->setProblemDefinition(pdef);
+    
+    // print the settings for this space
+    si->printSettings(std::cout);
+
+    // print the problem settings
+    pdef->print(std::cout);
+
+    // perform setup steps for the planner
+    planner->setup();    
+    
+    // solve with the planner
+    std::cout<< "Call solve now ......."<< std::endl;
+    planner->solve(5.0);
+    
+    ob::PlannerData data(si);
+    planner->getPlannerData(data);
+    
+    //std::ofstream dotFile;
+    //dotFile.open ("path.dot");
+    data.printGraphviz (std::cout);
+    //dotFile.close();
+  
+}
+
 int main(int, char **)
 {
 
@@ -288,7 +319,7 @@ int main(int, char **)
     
     std::cout << "Testing with pRRT* : " <<  std::endl;
 	
-	planWithPRRTS(si,pdef); 
+	planWithpRRTS(si,pdef); 
 	
     std::cout << std::endl << std::endl;
     std::cout << "Testing with pRRT* completed: " <<  std::endl;  
